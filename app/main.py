@@ -3,9 +3,11 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
-from . import models, notify, schemas
+from . import admin, models, notify, schemas
+from .admin import NotAuthenticated
 from .config import settings
 from .db import Base, engine, get_db
 from .signature import verify_retell_signature
@@ -16,6 +18,12 @@ logger = logging.getLogger(__name__)
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Retell Lead Router")
+app.include_router(admin.router)
+
+
+@app.exception_handler(NotAuthenticated)
+async def not_authenticated_handler(request: Request, exc: NotAuthenticated) -> RedirectResponse:
+    return RedirectResponse(url="/admin/login", status_code=303)
 
 
 def require_admin(x_admin_key: str = Header(default="")) -> None:

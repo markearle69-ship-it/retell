@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>{% block title %}Retell Lead Router{% endblock %}</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 0; padding: 2rem; background: #f7f7f8; color: #1a1a1a; }
+  @media (prefers-color-scheme: dark) { body { background: #14161a; color: #e6e6e6; } }
+  .card { background: white; border-radius: 10px; padding: 1.5rem; margin-bottom: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.08); max-width: 960px; }
+  @media (prefers-color-scheme: dark) { .card { background: #1e2126; box-shadow: none; border: 1px solid #2c313a; } }
+  h1 { font-size: 1.4rem; margin: 0 0 1rem; }
+  h2 { font-size: 1.1rem; margin: 0 0 0.75rem; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+  th, td { text-align: left; padding: 0.5rem 0.6rem; border-bottom: 1px solid #e5e5e7; vertical-align: top; }
+  @media (prefers-color-scheme: dark) { th, td { border-bottom: 1px solid #2c313a; } }
+  th { font-weight: 600; color: #666; }
+  input, button { font: inherit; padding: 0.45rem 0.6rem; border-radius: 6px; border: 1px solid #ccc; }
+  form.inline { display: inline; }
+  .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.75rem; align-items: end; }
+  .form-grid label { display: block; font-size: 0.8rem; color: #666; margin-bottom: 0.25rem; }
+  button { background: #2563eb; color: white; border: none; cursor: pointer; }
+  button.secondary { background: #6b7280; }
+  button.danger { background: #dc2626; }
+  code.url { display: block; padding: 0.6rem 0.8rem; background: #f0f0f2; border-radius: 6px; font-size: 0.85rem; overflow-x: auto; }
+  @media (prefers-color-scheme: dark) { code.url { background: #12151a; } }
+  a { color: #2563eb; }
+  .muted { color: #888; font-size: 0.85rem; }
+  .topbar { display: flex; justify-content: space-between; align-items: center; max-width: 960px; margin-bottom: 1rem; }
+</style>
+</head>
+<body>
+{% block body %}{% endblock %}
+</body>
+</html>

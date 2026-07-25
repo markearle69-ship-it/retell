@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block body %}
+<div class="topbar">
+  <h1>Call detail</h1>
+  <a href="/admin">&larr; Back</a>
+</div>
+<div class="card">
+  <p><strong>Site:</strong> {{ lead.tenant.business_name if lead.tenant else "Unassigned" }}</p>
+  <p><strong>Caller:</strong> {{ lead.from_number or "—" }}</p>
+  <p><strong>Called number:</strong> {{ lead.to_number or "—" }}</p>
+  <p><strong>Sentiment:</strong> {{ lead.user_sentiment or "—" }}</p>
+  <p><strong>Outcome:</strong>
+    {% if lead.call_successful is none %}—
+    {% elif lead.call_successful %}Resolved by agent
+    {% else %}Needs follow-up
+    {% endif %}
+  </p>
+  {% if lead.recording_url %}<p><strong>Recording:</strong> <a href="{{ lead.recording_url }}">{{ lead.recording_url }}</a></p>{% endif %}
+  <h2>Summary</h2>
+  <p>{{ lead.call_summary or "(no summary yet — waiting on call_analyzed event)" }}</p>
+  <h2>Transcript</h2>
+  <pre style="white-space: pre-wrap; font-size: 0.85rem;">{{ lead.transcript or "(no transcript)" }}</pre>
+</div>
+{% endblock %}

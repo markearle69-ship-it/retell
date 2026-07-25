@@ -30,9 +30,9 @@ change — you're just adding a webhook destination in Retell.
 - Looks up the `Tenant` whose `to_number` matches the call's `to_number`, and
   sends them an email + SMS with the caller's number and the call summary as
   soon as the summary is ready.
-- Exposes simple admin-only JSON endpoints (`/tenants`, `/leads`) so you can
-  manage tenants and pull lead history (e.g. to build a dashboard later, or
-  just query it directly).
+- Exposes simple admin-only JSON endpoints (`/tenants`, `/leads`) for
+  scripting, plus a password-protected admin panel at `/admin` for the same
+  thing through a browser.
 
 ## Setup
 
@@ -52,8 +52,9 @@ change — you're just adding a webhook destination in Retell.
    Fill in:
    - `RETELL_API_KEY` — the API key with the "webhook" badge in your Retell
      dashboard (used only to verify signatures, not to call Retell's API).
-   - `ADMIN_API_KEY` — any long random string; sent as `X-Admin-Key` to manage
-     tenants/leads.
+   - `ADMIN_API_KEY` — any long random string. Used two ways: as the
+     `X-Admin-Key` header for the `/tenants`/`/leads` API, and as the login
+     password for the `/admin` panel.
    - `DATABASE_URL` — defaults to a local SQLite file. Point it at Postgres
      for production (e.g. `postgresql+psycopg2://user:pass@host:5432/db`).
    - SMTP settings for email notifications.
@@ -86,10 +87,18 @@ change — you're just adding a webhook destination in Retell.
    earlier records, though the summary only exists once `call_analyzed`
    fires).
 
-5. **Register your tenants**
+5. **Register your tenants and check leads — via the admin panel**
 
-   One entry per rank-and-rent site, keyed by the Twilio number that site
-   forwards to Retell:
+   Go to `https://<your-domain>/admin`, log in with `ADMIN_API_KEY` as the
+   password. One entry per rank-and-rent site: Agent/site name, the Twilio
+   number that site forwards to Retell, and the tenant's forwarding SMS
+   number + email. The panel also shows the exact webhook URL to paste into
+   Retell, a table of all sites with their lead counts, and a feed of recent
+   calls (click through for the full transcript). Editing a site re-submits
+   the same form pre-filled; deleting a site unassigns (doesn't delete) its
+   past leads.
+
+   The same thing is available as a script/API if you'd rather automate it:
 
    ```bash
    python scripts/seed_tenant.py \
@@ -99,27 +108,22 @@ change — you're just adding a webhook destination in Retell.
      --notify-sms +15559876543
    ```
 
-   Or via the API:
-
    ```bash
    curl -X POST https://<your-domain>/tenants \
      -H "X-Admin-Key: $ADMIN_API_KEY" \
      -H "Content-Type: application/json" \
      -d '{"business_name": "Joe'\''s Plumbing", "to_number": "+15551234567",
           "notify_email": "joe@example.com", "notify_sms_number": "+15559876543"}'
-   ```
 
-6. **Check leads**
-
-   ```bash
    curl https://<your-domain>/leads -H "X-Admin-Key: $ADMIN_API_KEY"
    curl https://<your-domain>/leads/1 -H "X-Admin-Key: $ADMIN_API_KEY"   # includes full transcript
    ```
 
    A call that arrives before its `to_number` has a matching tenant is still
-   stored (with `tenant_id` null) — you won't lose the lead, you'll just see
-   a warning in the logs and no notification goes out until you add that
-   tenant and a later event re-matches, or you backfill manually.
+   stored (with `tenant_id` null, visible in the panel as "Unassigned") — you
+   won't lose the lead, you'll just see a warning in the logs and no
+   notification goes out until you add that tenant and a later event
+   re-matches, or you backfill manually.
 
 ## Running tests
 
