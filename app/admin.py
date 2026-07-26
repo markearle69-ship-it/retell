@@ -169,6 +169,7 @@ def upsert_tenant(
             )
     else:
         tenant.niche_template_id = None
+        tenant.provisioning_error = None
         db.commit()
 
     return RedirectResponse(url="/admin", status_code=303)

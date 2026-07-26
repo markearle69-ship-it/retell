@@ -133,3 +133,60 @@ def test_provisioning_form_shows_error_on_failure(monkeypatch):
     )
     assert resp.status_code == 400
     assert "Twilio number not found" in resp.text
+
+
+def test_reverting_to_manual_clears_stale_provisioning_error(monkeypatch):
+    client = _logged_in_client()
+
+    client.post(
+        "/admin/niches",
+        data={
+            "name": "Revert Niche",
+            "prompt_template": "Prompt for {{business_name}}",
+            "voice_id": "11labs-Adrian",
+        },
+        follow_redirects=False,
+    )
+
+    from app.db import SessionLocal
+    from app.models import NicheTemplate
+    from app.provisioning import ProvisioningError
+
+    db = SessionLocal()
+    niche_id = db.query(NicheTemplate).filter(NicheTemplate.name == "Revert Niche").first().id
+    db.close()
+
+    def fake_provision_site_fails(db, tenant, niche):
+        raise ProvisioningError("Phone number already exists.")
+
+    monkeypatch.setattr(admin, "provision_site", fake_provision_site_fails)
+
+    resp = client.post(
+        "/admin/tenants",
+        data={
+            "business_name": "Already Manual Site",
+            "to_number": "+15551119999",
+            "niche_id": str(niche_id),
+        },
+    )
+    assert resp.status_code == 400
+    assert "already exists" in resp.text
+
+    # Reverting to manual (no niche selected) should clear the stale error,
+    # not leave the site stuck showing "Error" forever.
+    resp = client.post(
+        "/admin/tenants",
+        data={
+            "business_name": "Already Manual Site",
+            "to_number": "+15551119999",
+            "niche_id": "",
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+
+    dashboard_resp = client.get("/admin")
+    assert "Already Manual Site" in dashboard_resp.text
+    row = dashboard_resp.text.split("Already Manual Site")[1].split("</tr>")[0]
+    assert "Manual" in row
+    assert "already exists" not in row

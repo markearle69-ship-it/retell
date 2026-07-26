@@ -1,9 +1,46 @@
 import time
 
+import httpx
 import pytest
 
 from app import models, provisioning
 from app.db import SessionLocal
+
+
+class _FakeResponse:
+    def __init__(self, status_code: int, text: str):
+        self.status_code = status_code
+        self.text = text
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            request = httpx.Request("POST", "https://api.retellai.com/import-phone-number")
+            raise httpx.HTTPStatusError("error", request=request, response=self)
+
+
+class _FakeRetellClient:
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def post(self, url, headers=None, json=None):
+        return _FakeResponse(400, '{"status":"error","message":"Phone number already exists."}')
+
+
+def test_import_number_already_exists_gives_actionable_message(monkeypatch):
+    monkeypatch.setattr(provisioning.httpx, "Client", _FakeRetellClient)
+    monkeypatch.setattr(provisioning, "get_trunk_termination_uri", lambda: "test.pstn.twilio.com")
+
+    with pytest.raises(provisioning.ProvisioningError) as exc_info:
+        provisioning.import_number_to_retell("+15551234567", "agent_123")
+
+    assert "already has a phone number import" in str(exc_info.value)
+    assert "leave this site's niche unset" in str(exc_info.value)
 
 
 @pytest.fixture

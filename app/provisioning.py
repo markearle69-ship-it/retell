@@ -161,6 +161,13 @@ def import_number_to_retell(phone_number: str, agent_id: str) -> None:
             )
             resp.raise_for_status()
     except httpx.HTTPStatusError as exc:
+        if "already exists" in exc.response.text.lower():
+            raise ProvisioningError(
+                f"Retell already has a phone number import for {phone_number} from before this "
+                "site used auto-provisioning (likely set up manually). Auto-provisioning can't "
+                "take over an existing import — either leave this site's niche unset (manual), "
+                "or delete its existing phone number entry in Retell's dashboard first, then retry."
+            ) from exc
         raise ProvisioningError(
             f"Retell phone number import failed: {exc.response.status_code} {exc.response.text}"
         ) from exc
