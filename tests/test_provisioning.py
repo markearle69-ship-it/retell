@@ -8,14 +8,18 @@ from app.db import SessionLocal
 
 
 class _FakeResponse:
-    def __init__(self, status_code: int, text: str):
+    def __init__(self, status_code: int, text: str, json_data: dict | None = None):
         self.status_code = status_code
         self.text = text
+        self._json_data = json_data or {}
 
     def raise_for_status(self):
         if self.status_code >= 400:
             request = httpx.Request("POST", "https://api.retellai.com/import-phone-number")
             raise httpx.HTTPStatusError("error", request=request, response=self)
+
+    def json(self):
+        return self._json_data
 
 
 class _FakeRetellClient:
@@ -41,6 +45,54 @@ def test_import_number_already_exists_gives_actionable_message(monkeypatch):
 
     assert "already has a phone number import" in str(exc_info.value)
     assert "leave this site's niche unset" in str(exc_info.value)
+
+
+class _NicheStub:
+    prompt_template = "Prompt for {{business_name}}"
+    begin_message_template = None
+    model = "gpt-4.1"
+    voice_id = "bad-voice-id"
+
+
+class _TenantStub:
+    business_name = "Test Business"
+    location = "Testville"
+    zip_codes = "00000"
+
+
+def test_create_retell_agent_reports_llm_step_failure(monkeypatch):
+    class _FailLlmClient(_FakeRetellClient):
+        def post(self, url, headers=None, json=None):
+            return _FakeResponse(404, '{"status":"error","message":"Not Found"}')
+
+    monkeypatch.setattr(provisioning.httpx, "Client", _FailLlmClient)
+
+    with pytest.raises(provisioning.ProvisioningError) as exc_info:
+        provisioning.create_retell_agent(_NicheStub(), _TenantStub())
+
+    assert "Retell LLM creation failed" in str(exc_info.value)
+
+
+def test_create_retell_agent_reports_agent_step_failure_and_llm_id(monkeypatch):
+    class _FailAgentClient(_FakeRetellClient):
+        def __init__(self, *a, **kw):
+            self.calls = 0
+
+        def post(self, url, headers=None, json=None):
+            self.calls += 1
+            if self.calls == 1:
+                return _FakeResponse(200, "ok", json_data={"llm_id": "llm_abc123"})
+            return _FakeResponse(404, '{"status":"error","message":"Not Found"}')
+
+    monkeypatch.setattr(provisioning.httpx, "Client", _FailAgentClient)
+
+    with pytest.raises(provisioning.ProvisioningError) as exc_info:
+        provisioning.create_retell_agent(_NicheStub(), _TenantStub())
+
+    message = str(exc_info.value)
+    assert "Retell agent creation failed" in message
+    assert "llm_abc123" in message
+    assert "orphaned" in message
 
 
 @pytest.fixture

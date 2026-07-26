@@ -71,10 +71,13 @@
         {% endfor %}
       </select>
     </div>
-    {% if edit_tenant and edit_tenant.provisioned_at %}
+    {% if edit_tenant and (edit_tenant.provisioned_at or edit_tenant.retell_agent_id or edit_tenant.twilio_number_sid) %}
     <div>
       <label><input type="checkbox" name="force_reprovision" value="1" style="width:auto; padding:0;" /> Force re-provision</label>
-      <p class="muted" style="margin:0;">Already provisioned. Only check this to recreate the Retell agent/LLM from scratch.</p>
+      <p class="muted" style="margin:0;">
+        Clears any stored agent/LLM/number IDs and creates everything fresh. Check this if a previous
+        attempt only partially completed, or if you deleted the agent/LLM in Retell directly.
+      </p>
     </div>
     {% endif %}
     <div>

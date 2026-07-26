@@ -65,30 +65,41 @@ def create_retell_agent(niche: "NicheTemplate", tenant: "Tenant") -> tuple[str, 
     if niche.begin_message_template:
         llm_payload["begin_message"] = render_template(niche.begin_message_template, variables)
 
-    try:
-        with httpx.Client(timeout=30) as client:
+    with httpx.Client(timeout=30) as client:
+        try:
             resp = client.post(
                 f"{RETELL_API_BASE}/create-retell-llm", headers=_retell_headers(), json=llm_payload
             )
             resp.raise_for_status()
-            llm_id = resp.json()["llm_id"]
+        except httpx.HTTPStatusError as exc:
+            raise ProvisioningError(
+                f"Retell LLM creation failed: {exc.response.status_code} {exc.response.text}"
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise ProvisioningError(f"Retell LLM creation failed: {exc}") from exc
+        llm_id = resp.json()["llm_id"]
 
-            agent_payload = {
-                "agent_name": tenant.business_name,
-                "voice_id": niche.voice_id,
-                "response_engine": {"type": "retell-llm", "llm_id": llm_id},
-            }
+        agent_payload = {
+            "agent_name": tenant.business_name,
+            "voice_id": niche.voice_id,
+            "response_engine": {"type": "retell-llm", "llm_id": llm_id},
+        }
+        try:
             resp = client.post(
                 f"{RETELL_API_BASE}/create-agent", headers=_retell_headers(), json=agent_payload
             )
             resp.raise_for_status()
-            agent_id = resp.json()["agent_id"]
-    except httpx.HTTPStatusError as exc:
-        raise ProvisioningError(
-            f"Retell agent creation failed: {exc.response.status_code} {exc.response.text}"
-        ) from exc
-    except httpx.HTTPError as exc:
-        raise ProvisioningError(f"Retell agent creation failed: {exc}") from exc
+        except httpx.HTTPStatusError as exc:
+            raise ProvisioningError(
+                f"Retell agent creation failed (LLM {llm_id} was created and is now orphaned - "
+                f"safe to delete in Retell's dashboard): {exc.response.status_code} {exc.response.text}"
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise ProvisioningError(
+                f"Retell agent creation failed (LLM {llm_id} was created and is now orphaned - "
+                f"safe to delete in Retell's dashboard): {exc}"
+            ) from exc
+        agent_id = resp.json()["agent_id"]
 
     return llm_id, agent_id
 

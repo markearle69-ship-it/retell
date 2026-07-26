@@ -190,3 +190,29 @@ def test_reverting_to_manual_clears_stale_provisioning_error(monkeypatch):
     row = dashboard_resp.text.split("Already Manual Site")[1].split("</tr>")[0]
     assert "Manual" in row
     assert "already exists" not in row
+
+
+def test_force_reprovision_checkbox_shows_for_partial_state_not_just_full_success():
+    client = _logged_in_client()
+
+    resp = client.post(
+        "/admin/tenants",
+        data={"business_name": "Partial Provision Site", "to_number": "+15553334444"},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+
+    from app.db import SessionLocal
+    from app.models import Tenant
+
+    db = SessionLocal()
+    tenant = db.query(Tenant).filter(Tenant.to_number == "+15553334444").first()
+    tenant_id = tenant.id
+    # Simulate a partially-completed provisioning attempt: agent created,
+    # but the number import step never succeeded (provisioned_at stays None).
+    tenant.retell_agent_id = "agent_stale_123"
+    db.commit()
+    db.close()
+
+    resp = client.get(f"/admin?edit_id={tenant_id}")
+    assert "force_reprovision" in resp.text
