@@ -2,7 +2,10 @@
 {% block body %}
 <div class="topbar">
   <h1>Retell Lead Router</h1>
-  <form method="post" action="/admin/logout"><button class="secondary" type="submit">Log out</button></form>
+  <div>
+    <a href="/admin/niches" class="muted" style="margin-right: 1rem;">Niche templates</a>
+    <form class="inline" method="post" action="/admin/logout"><button class="secondary" type="submit">Log out</button></form>
+  </div>
 </div>
 
 <div class="card">
@@ -15,8 +18,21 @@
   <code class="url">{{ webhook_url }}</code>
 </div>
 
+{% if provision_error %}
+<div class="card" style="border: 1px solid #dc2626;">
+  <h2 style="color:#dc2626;">Provisioning failed</h2>
+  <p>{{ provision_error }}</p>
+  <p class="muted">Whatever succeeded before this step was kept &mdash; fix the issue and resubmit the form below to retry just the remaining steps.</p>
+</div>
+{% endif %}
+
 <div class="card">
   <h2>{% if edit_tenant %}Edit site{% else %}Add a site{% endif %}</h2>
+  <p class="muted">
+    Leave "Niche" unset to just record a site's contact info manually. Pick a niche to also
+    auto-create the Retell agent/LLM, attach the Twilio number to your SIP trunk, and import it
+    into Retell &mdash; you'll only need to buy the Twilio number yourself first.
+  </p>
   <form method="post" action="/admin/tenants" class="form-grid">
     {% if edit_tenant %}<input type="hidden" name="tenant_id" value="{{ edit_tenant.id }}" />{% endif %}
     <div>
@@ -24,7 +40,7 @@
       <input name="business_name" required value="{{ edit_tenant.business_name if edit_tenant else '' }}" />
     </div>
     <div>
-      <label>Twilio number (E.164)</label>
+      <label>Twilio number (E.164, already purchased)</label>
       <input name="to_number" required placeholder="+15551234567"
              value="{{ edit_tenant.to_number if edit_tenant else '' }}" />
     </div>
@@ -38,6 +54,30 @@
       <input name="notify_email" type="email" value="{{ edit_tenant.notify_email if edit_tenant else '' }}" />
     </div>
     <div>
+      <label>Location (used in prompt)</label>
+      <input name="location" placeholder="Socorro, Texas" value="{{ edit_tenant.location if edit_tenant else '' }}" />
+    </div>
+    <div>
+      <label>Zip codes covered (used in prompt)</label>
+      <input name="zip_codes" placeholder="79927, 79928 and 79929"
+             value="{{ edit_tenant.zip_codes if edit_tenant else '' }}" />
+    </div>
+    <div>
+      <label>Niche (auto-provision)</label>
+      <select name="niche_id">
+        <option value="">&mdash; manual, no auto-provisioning &mdash;</option>
+        {% for niche in niches %}
+          <option value="{{ niche.id }}" {% if edit_tenant and edit_tenant.niche_template_id == niche.id %}selected{% endif %}>{{ niche.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% if edit_tenant and edit_tenant.provisioned_at %}
+    <div>
+      <label><input type="checkbox" name="force_reprovision" value="1" style="width:auto; padding:0;" /> Force re-provision</label>
+      <p class="muted" style="margin:0;">Already provisioned. Only check this to recreate the Retell agent/LLM from scratch.</p>
+    </div>
+    {% endif %}
+    <div>
       <button type="submit">{% if edit_tenant %}Save changes{% else %}Add site{% endif %}</button>
       {% if edit_tenant %}<a href="/admin" class="muted" style="margin-left:0.5rem;">Cancel</a>{% endif %}
     </div>
@@ -48,7 +88,7 @@
   <h2>Sites ({{ tenants|length }})</h2>
   <table>
     <thead>
-      <tr><th>Agent / site</th><th>Twilio number</th><th>Forward SMS</th><th>Email</th><th>Leads</th><th></th></tr>
+      <tr><th>Agent / site</th><th>Twilio number</th><th>Forward SMS</th><th>Email</th><th>Leads</th><th>Provisioning</th><th></th></tr>
     </thead>
     <tbody>
     {% for t in tenants %}
@@ -59,6 +99,17 @@
         <td>{{ t.notify_email or "—" }}</td>
         <td>{{ lead_counts.get(t.id, 0) }}</td>
         <td>
+          {% if t.provisioned_at %}
+            <span title="agent {{ t.retell_agent_id }}">Auto &#10003;</span>
+          {% elif t.provisioning_error %}
+            <span style="color:#dc2626;" title="{{ t.provisioning_error }}">Error</span>
+          {% elif t.niche_template_id %}
+            <span class="muted">Pending</span>
+          {% else %}
+            <span class="muted">Manual</span>
+          {% endif %}
+        </td>
+        <td>
           <a href="/admin?edit_id={{ t.id }}">Edit</a>
           &nbsp;
           <form class="inline" method="post" action="/admin/tenants/{{ t.id }}/delete"
@@ -68,7 +119,7 @@
         </td>
       </tr>
     {% else %}
-      <tr><td colspan="6" class="muted">No sites yet &mdash; add one above.</td></tr>
+      <tr><td colspan="7" class="muted">No sites yet &mdash; add one above.</td></tr>
     {% endfor %}
     </tbody>
   </table>

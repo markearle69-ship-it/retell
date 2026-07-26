@@ -33,6 +33,11 @@ change — you're just adding a webhook destination in Retell.
 - Exposes simple admin-only JSON endpoints (`/tenants`, `/leads`) for
   scripting, plus a password-protected admin panel at `/admin` for the same
   thing through a browser.
+- Optionally **auto-provisions new sites**: pick a niche template in the
+  panel and it creates the Retell LLM + agent from that niche's prompt,
+  attaches your already-purchased Twilio number to your shared SIP trunk,
+  and imports the number into Retell pointed at the new agent — the only
+  manual step left is buying the number in Twilio.
 
 ## Setup
 
@@ -51,7 +56,7 @@ change — you're just adding a webhook destination in Retell.
 
    Fill in:
    - `RETELL_API_KEY` — the API key with the "webhook" badge in your Retell
-     dashboard (used only to verify signatures, not to call Retell's API).
+     dashboard (see note on this below the Twilio settings).
    - `ADMIN_API_KEY` — any long random string. Used two ways: as the
      `X-Admin-Key` header for the `/tenants`/`/leads` API, and as the login
      password for the `/admin` panel.
@@ -61,6 +66,15 @@ change — you're just adding a webhook destination in Retell.
    - Twilio settings for SMS notifications (reuse your existing Twilio
      account/credentials — this is separate from the SIP trunk config, just
      used to send outbound texts to tenants).
+   - `TWILIO_TRUNK_SID` / `TWILIO_SIP_USERNAME` / `TWILIO_SIP_PASSWORD` —
+     only needed if you want the auto-provisioning feature (see below). These
+     come from the one-time manual trunk setup: the trunk's SID and the
+     termination credential list you created on it.
+   - `RETELL_API_KEY` is used both to verify webhook signatures and — if you
+     use auto-provisioning — to call Retell's agent/LLM/phone-number APIs.
+     Retell docs note only the key with the "webhook badge" verifies
+     signatures; if agent-management calls fail with that same key, check
+     whether your account needs a separate full-access key for those calls.
 
 3. **Run it**
 
@@ -125,6 +139,43 @@ change — you're just adding a webhook destination in Retell.
    notification goes out until you add that tenant and a later event
    re-matches, or you backfill manually.
 
+6. **(Optional) Auto-provisioning new sites**
+
+   This replaces most of the manual Twilio + Retell setup per site with one
+   form submit. It assumes **one shared SIP trunk** for every site — Twilio
+   trunks support many phone numbers, so you only do the trunk setup once:
+
+   - In Twilio: create the Elastic SIP Trunk, enable Call Transfer, add a
+     termination credential (username/password), add
+     `sip:sip.retellai.com` as the origination URI. This is steps 2–5 of
+     your original manual process — do it exactly once, not per site.
+   - Put that trunk's SID in `TWILIO_TRUNK_SID`, and the credential
+     username/password in `TWILIO_SIP_USERNAME` / `TWILIO_SIP_PASSWORD`.
+
+   Then in `/admin/niches`, add a niche template per trade (e.g. "Auto AC
+   Repair", "Oil Tank Removal") — a name, a Retell `general_prompt` with
+   `{{business_name}}`, `{{location}}`, and `{{zip_codes}}` placeholders
+   anywhere the per-site details should be substituted in, a Retell voice
+   ID, and a model.
+
+   From then on, adding a new site is: buy the Twilio number yourself (the
+   one step that spends money, kept manual on purpose), then on `/admin`
+   fill in the site form with a niche selected. Submitting it:
+
+   1. Renders that niche's prompt with the site's business name/location/zip
+      codes and creates a Retell LLM + Agent from it.
+   2. Looks up the Twilio number you bought and attaches it to your shared
+      trunk.
+   3. Imports the number into Retell via SIP, pointed at the new agent
+      (this is the equivalent of your manual step 8).
+
+   Each step only runs if it hasn't already succeeded for that site, so if
+   something fails partway (shown as an error banner with the exact cause —
+   e.g. "number not found, buy it first"), fixing the issue and resubmitting
+   the same form only retries what's left. A niche is just a starting point:
+   after provisioning, tweak the agent/prompt further in Retell's dashboard
+   as needed — the panel doesn't try to keep them in sync afterward.
+
 ## Running tests
 
 ```bash
@@ -141,4 +192,11 @@ pytest
   small frontend on top of the existing `/leads` and `/tenants` endpoints, or
   swap the admin-key auth for per-tenant login.
 - SQLite is fine for a single instance; move `DATABASE_URL` to Postgres if
-  you deploy multiple instances or want concurrent writes at higher volume.
+  you deploy multiple instances or want concurrent writes at higher volume
+  (Railway wipes local SQLite files on redeploy — use a Volume or Postgres).
+- If a Retell agent creation succeeds but the following step fails, the LLM
+  resource it created stays behind unused on Retell's side (harmless, but
+  you may want to delete it manually from Retell's dashboard).
+- Changing which niche a site uses after it's already provisioned doesn't
+  automatically recreate its agent — check "Force re-provision" on the edit
+  form if you want a fresh agent/LLM built from the newly selected niche.

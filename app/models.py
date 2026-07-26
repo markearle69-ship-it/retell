@@ -16,6 +16,23 @@ from sqlalchemy.orm import relationship
 from .db import Base
 
 
+class NicheTemplate(Base):
+    """A reusable Retell agent prompt for a niche (e.g. Auto AC Repair), with
+    {{business_name}}/{{location}}/{{zip_codes}} placeholders filled in per site."""
+
+    __tablename__ = "niche_templates"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String, unique=True, nullable=False)
+    prompt_template = Column(Text, nullable=False)
+    begin_message_template = Column(Text, nullable=True)
+    voice_id = Column(String, nullable=False)
+    model = Column(String, nullable=False, default="gpt-4.1")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    tenants = relationship("Tenant", back_populates="niche_template")
+
+
 class Tenant(Base):
     """A local business (rank-and-rent site owner) that receives leads."""
 
@@ -28,9 +45,21 @@ class Tenant(Base):
     to_number = Column(String, unique=True, nullable=False, index=True)
     notify_email = Column(String, nullable=True)
     notify_sms_number = Column(String, nullable=True)
+
+    # Auto-provisioning (Twilio SIP trunk + Retell agent/LLM/number import).
+    niche_template_id = Column(Integer, ForeignKey("niche_templates.id"), nullable=True)
+    location = Column(String, nullable=True)
+    zip_codes = Column(String, nullable=True)
+    retell_llm_id = Column(String, nullable=True)
+    retell_agent_id = Column(String, nullable=True)
+    twilio_number_sid = Column(String, nullable=True)
+    provisioned_at = Column(DateTime, nullable=True)
+    provisioning_error = Column(Text, nullable=True)
+
     created_at = Column(DateTime, default=datetime.utcnow)
 
     leads = relationship("Lead", back_populates="tenant")
+    niche_template = relationship("NicheTemplate", back_populates="tenants")
 
 
 class Lead(Base):

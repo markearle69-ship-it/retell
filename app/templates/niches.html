@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block body %}
+<div class="topbar">
+  <h1>Niche templates</h1>
+  <a href="/admin">&larr; Back to sites</a>
+</div>
+
+<div class="card">
+  <h2>{% if edit_niche %}Edit "{{ edit_niche.name }}"{% else %}Add a niche template{% endif %}</h2>
+  <p class="muted">
+    Write the prompt once per niche (the questions specific to that trade). Use
+    <code>{{ '{{business_name}}' }}</code>, <code>{{ '{{location}}' }}</code> and
+    <code>{{ '{{zip_codes}}' }}</code> anywhere you want the per-site details substituted in.
+  </p>
+  <form method="post" action="/admin/niches">
+    {% if edit_niche %}<input type="hidden" name="niche_id" value="{{ edit_niche.id }}" />{% endif %}
+    <div style="margin-bottom: 0.75rem;">
+      <label class="muted">Niche name</label><br />
+      <input name="name" required style="width:100%; box-sizing:border-box;"
+             value="{{ edit_niche.name if edit_niche else '' }}" placeholder="Auto AC Repair" />
+    </div>
+    <div style="margin-bottom: 0.75rem;">
+      <label class="muted">Prompt template (general_prompt)</label><br />
+      <textarea name="prompt_template" required rows="14"
+                style="width:100%; box-sizing:border-box; font-family: ui-monospace, monospace; font-size: 0.85rem;"
+      >{{ edit_niche.prompt_template if edit_niche else '' }}</textarea>
+    </div>
+    <div style="margin-bottom: 0.75rem;">
+      <label class="muted">Begin message (optional)</label><br />
+      <input name="begin_message_template" style="width:100%; box-sizing:border-box;"
+             value="{{ edit_niche.begin_message_template if edit_niche else '' }}"
+             placeholder="Thanks for calling {{ '{{business_name}}' }}, how can I help you today?" />
+    </div>
+    <div class="form-grid" style="margin-bottom: 0.75rem;">
+      <div>
+        <label>Retell voice ID</label>
+        <input name="voice_id" required value="{{ edit_niche.voice_id if edit_niche else '' }}" placeholder="11labs-Adrian" />
+      </div>
+      <div>
+        <label>Model</label>
+        <input name="model" value="{{ edit_niche.model if edit_niche else 'gpt-4.1' }}" />
+      </div>
+    </div>
+    <button type="submit">{% if edit_niche %}Save changes{% else %}Add niche{% endif %}</button>
+    {% if edit_niche %}<a href="/admin/niches" class="muted" style="margin-left:0.5rem;">Cancel</a>{% endif %}
+  </form>
+</div>
+
+<div class="card">
+  <h2>Existing niches ({{ niches|length }})</h2>
+  <table>
+    <thead><tr><th>Name</th><th>Voice</th><th>Model</th><th></th></tr></thead>
+    <tbody>
+    {% for n in niches %}
+      <tr>
+        <td>{{ n.name }}</td>
+        <td>{{ n.voice_id }}</td>
+        <td>{{ n.model }}</td>
+        <td>
+          <a href="/admin/niches?edit_id={{ n.id }}">Edit</a>
+          &nbsp;
+          <form class="inline" method="post" action="/admin/niches/{{ n.id }}/delete"
+                onsubmit="return confirm('Remove niche {{ n.name }}? Sites using it keep their existing agent.');">
+            <button class="danger" type="submit">Delete</button>
+          </form>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="4" class="muted">No niche templates yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
