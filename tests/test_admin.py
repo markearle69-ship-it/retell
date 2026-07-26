@@ -80,3 +80,29 @@ def test_login_and_manage_tenant_via_panel():
 
     resp = client.get("/admin")
     assert "Renamed Test Site" not in resp.text
+
+
+def test_add_site_with_manual_niche_select_does_not_500():
+    # A real browser <select> always submits a value, including "" for the
+    # "manual, no auto-provisioning" placeholder option — this must be treated
+    # as "no niche", not fail form validation.
+    client = TestClient(app)
+    client.post("/admin/login", data={"password": settings.admin_api_key}, follow_redirects=False)
+
+    resp = client.post(
+        "/admin/tenants",
+        data={
+            "business_name": "Manual Select Site",
+            "to_number": "+15558889999",
+            "notify_email": "",
+            "notify_sms_number": "",
+            "location": "",
+            "zip_codes": "",
+            "niche_id": "",
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+
+    resp = client.get("/admin")
+    assert "Manual Select Site" in resp.text

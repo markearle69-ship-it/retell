@@ -112,11 +112,12 @@ def upsert_tenant(
     notify_sms_number: Optional[str] = Form(None),
     location: Optional[str] = Form(None),
     zip_codes: Optional[str] = Form(None),
-    niche_id: Optional[int] = Form(None),
+    niche_id: Optional[str] = Form(None),
     force_reprovision: Optional[str] = Form(None),
     db: Session = Depends(get_db),
 ):
     to_number = to_number.strip()
+    niche_id_int = int(niche_id) if niche_id else None
 
     tenant = None
     if tenant_id:
@@ -134,8 +135,8 @@ def upsert_tenant(
     tenant.location = (location or "").strip() or None
     tenant.zip_codes = (zip_codes or "").strip() or None
 
-    if niche_id:
-        niche = db.query(models.NicheTemplate).filter(models.NicheTemplate.id == niche_id).first()
+    if niche_id_int:
+        niche = db.query(models.NicheTemplate).filter(models.NicheTemplate.id == niche_id_int).first()
         if niche is None:
             db.commit()
             return templates.TemplateResponse(
