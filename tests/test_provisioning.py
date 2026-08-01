@@ -48,10 +48,13 @@ def test_import_number_already_exists_gives_actionable_message(monkeypatch):
 
 
 class _NicheStub:
-    prompt_template = "Prompt for {{business_name}}"
+    prompt_template = "Prompt for {{business_name}}, covering {{service_description}}: {{collect_list}}"
     begin_message_template = None
     model = "gpt-4.1"
     voice_id = "bad-voice-id"
+    service_description = "air conditioning repair"
+    problem_domain = "vehicle AC issues"
+    collect_list = "- make/model\n- issue description"
 
 
 class _TenantStub:
@@ -93,6 +96,27 @@ def test_create_retell_agent_reports_agent_step_failure_and_llm_id(monkeypatch):
     assert "Retell agent creation failed" in message
     assert "llm_abc123" in message
     assert "orphaned" in message
+
+
+def test_create_retell_agent_substitutes_niche_level_variables(monkeypatch):
+    captured = {}
+
+    class _CapturingClient(_FakeRetellClient):
+        def post(self, url, headers=None, json=None):
+            if url.endswith("/create-retell-llm"):
+                captured["llm_payload"] = json
+                return _FakeResponse(200, "ok", json_data={"llm_id": "llm_captured"})
+            captured["agent_payload"] = json
+            return _FakeResponse(200, "ok", json_data={"agent_id": "agent_captured"})
+
+    monkeypatch.setattr(provisioning.httpx, "Client", _CapturingClient)
+
+    provisioning.create_retell_agent(_NicheStub(), _TenantStub())
+
+    prompt = captured["llm_payload"]["general_prompt"]
+    assert "Test Business" in prompt  # per-site
+    assert "air conditioning repair" in prompt  # per-niche
+    assert "make/model" in prompt  # per-niche
 
 
 @pytest.fixture

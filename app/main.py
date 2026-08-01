@@ -10,12 +10,14 @@ from . import admin, models, notify, schemas
 from .admin import NotAuthenticated
 from .config import settings
 from .db import Base, engine, get_db
+from .migrations import run_additive_migrations
 from .signature import verify_retell_signature
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 Base.metadata.create_all(bind=engine)
+run_additive_migrations(engine)
 
 app = FastAPI(title="Retell Lead Router")
 app.include_router(admin.router)

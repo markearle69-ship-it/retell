@@ -218,6 +218,9 @@ def upsert_niche(
     begin_message_template: Optional[str] = Form(None),
     voice_id: str = Form(...),
     model: str = Form("gpt-4.1"),
+    service_description: Optional[str] = Form(None),
+    problem_domain: Optional[str] = Form(None),
+    collect_list: Optional[str] = Form(None),
     db: Session = Depends(get_db),
 ):
     niche = None
@@ -232,6 +235,9 @@ def upsert_niche(
     niche.begin_message_template = (begin_message_template or "").strip() or None
     niche.voice_id = voice_id.strip()
     niche.model = (model or "gpt-4.1").strip()
+    niche.service_description = (service_description or "").strip() or None
+    niche.problem_domain = (problem_domain or "").strip() or None
+    niche.collect_list = (collect_list or "").strip() or None
 
     db.commit()
     return RedirectResponse(url="/admin/niches", status_code=303)

@@ -8,9 +8,11 @@
 <div class="card">
   <h2>{% if edit_niche %}Edit "{{ edit_niche.name }}"{% else %}Add a niche template{% endif %}</h2>
   <p class="muted">
-    Write the prompt once per niche (the questions specific to that trade). Use
-    <code>{{ '{{business_name}}' }}</code>, <code>{{ '{{location}}' }}</code> and
-    <code>{{ '{{zip_codes}}' }}</code> anywhere you want the per-site details substituted in.
+    Write the prompt once per niche. Per-site placeholders:
+    <code>{{ '{{business_name}}' }}</code>, <code>{{ '{{location}}' }}</code>,
+    <code>{{ '{{zip_codes}}' }}</code>. Per-niche placeholders (filled in below, same for every
+    site in this niche): <code>{{ '{{service_description}}' }}</code>,
+    <code>{{ '{{problem_domain}}' }}</code>, <code>{{ '{{collect_list}}' }}</code>.
   </p>
   <form method="post" action="/admin/niches">
     {% if edit_niche %}<input type="hidden" name="niche_id" value="{{ edit_niche.id }}" />{% endif %}
@@ -30,6 +32,25 @@
       <input name="begin_message_template" style="width:100%; box-sizing:border-box;"
              value="{{ edit_niche.begin_message_template if edit_niche else '' }}"
              placeholder="Thanks for calling {{ '{{business_name}}' }}, how can I help you today?" />
+    </div>
+    <div style="margin-bottom: 0.75rem;">
+      <label class="muted">Service description &mdash; fills {{ '{{service_description}}' }}</label><br />
+      <input name="service_description" style="width:100%; box-sizing:border-box;"
+             value="{{ edit_niche.service_description if edit_niche else '' }}"
+             placeholder="air conditioning faults and repairs" />
+    </div>
+    <div style="margin-bottom: 0.75rem;">
+      <label class="muted">Problem domain &mdash; fills {{ '{{problem_domain}}' }}</label><br />
+      <input name="problem_domain" style="width:100%; box-sizing:border-box;"
+             value="{{ edit_niche.problem_domain if edit_niche else '' }}"
+             placeholder="issues with their vehicle's air conditioning" />
+    </div>
+    <div style="margin-bottom: 0.75rem;">
+      <label class="muted">Collect list &mdash; fills {{ '{{collect_list}}' }} (what to ask about, in order)</label><br />
+      <textarea name="collect_list" rows="5"
+                style="width:100%; box-sizing:border-box; font-family: ui-monospace, monospace; font-size: 0.85rem;"
+                placeholder="- The vehicle's make, model, and age&#10;- What the AC issue is and how long they've had it&#10;- How urgent it is for them"
+      >{{ edit_niche.collect_list if edit_niche else '' }}</textarea>
     </div>
     <div class="form-grid" style="margin-bottom: 0.75rem;">
       <div>

@@ -39,11 +39,16 @@ def render_template(text: str, variables: dict) -> str:
     return _VAR_RE.sub(_sub, text)
 
 
-def _template_variables(tenant: "Tenant") -> dict:
+def _template_variables(tenant: "Tenant", niche: "NicheTemplate") -> dict:
     return {
+        # Per-site.
         "business_name": tenant.business_name,
         "location": tenant.location or "",
         "zip_codes": tenant.zip_codes or "",
+        # Per-niche (same for every site using this niche).
+        "service_description": niche.service_description or "",
+        "problem_domain": niche.problem_domain or "",
+        "collect_list": niche.collect_list or "",
     }
 
 
@@ -56,7 +61,7 @@ def _retell_headers() -> dict:
 
 def create_retell_agent(niche: "NicheTemplate", tenant: "Tenant") -> tuple[str, str]:
     """Create a Retell LLM (rendered prompt) + Agent using it. Returns (llm_id, agent_id)."""
-    variables = _template_variables(tenant)
+    variables = _template_variables(tenant, niche)
     llm_payload = {
         "general_prompt": render_template(niche.prompt_template, variables),
         "model": niche.model or "gpt-4.1",

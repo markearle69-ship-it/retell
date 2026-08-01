@@ -28,6 +28,14 @@ class NicheTemplate(Base):
     begin_message_template = Column(Text, nullable=True)
     voice_id = Column(String, nullable=False)
     model = Column(String, nullable=False, default="gpt-4.1")
+
+    # Niche-level (same for every site in this niche) template variables, for
+    # sharing one generic prompt structure across niches via {{service_description}}
+    # / {{problem_domain}} / {{collect_list}} placeholders.
+    service_description = Column(Text, nullable=True)
+    problem_domain = Column(Text, nullable=True)
+    collect_list = Column(Text, nullable=True)
+
     created_at = Column(DateTime, default=datetime.utcnow)
 
     tenants = relationship("Tenant", back_populates="niche_template")
