@@ -66,6 +66,17 @@ def create_retell_agent(niche: "NicheTemplate", tenant: "Tenant") -> tuple[str, 
         "general_prompt": render_template(niche.prompt_template, variables),
         "model": niche.model or "gpt-4.1",
         "start_speaker": "agent",
+        # Without this, a prompt instructing the agent to "invoke end_call" (e.g.
+        # for hanging up on robocalls/spam) has no actual tool to call - it's not
+        # available by default and has to be registered explicitly.
+        "general_tools": [
+            {
+                "type": "end_call",
+                "name": "end_call",
+                "description": "End the call.",
+                "speak_during_execution": False,
+            }
+        ],
     }
     if niche.begin_message_template:
         llm_payload["begin_message"] = render_template(niche.begin_message_template, variables)

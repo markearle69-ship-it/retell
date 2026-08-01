@@ -118,6 +118,9 @@ def test_create_retell_agent_substitutes_niche_level_variables(monkeypatch):
     assert "air conditioning repair" in prompt  # per-niche
     assert "make/model" in prompt  # per-niche
 
+    tool_types = {t["type"] for t in captured["llm_payload"]["general_tools"]}
+    assert "end_call" in tool_types
+
 
 @pytest.fixture
 def db():
