@@ -28,6 +28,16 @@ class NotAuthenticated(Exception):
     """Raised by require_admin_session; caught by an app-level handler that redirects to /admin/login."""
 
 
+def _public_webhook_url(request: Request) -> str:
+    """request.base_url reports "http" behind Railway's proxy, since TLS is
+    terminated at the edge and the request reaches this container as plain
+    HTTP - there's no proxy-header trust configured to correct it. Force
+    https except for actual local dev, where http is genuinely correct."""
+    base = request.base_url
+    scheme = "https" if base.hostname not in ("localhost", "127.0.0.1") else base.scheme
+    return f"{scheme}://{base.netloc}/webhooks/retell"
+
+
 def require_admin_session(request: Request) -> None:
     token = request.cookies.get(SESSION_COOKIE_NAME)
     if not token or not verify_session_cookie(token):
@@ -90,7 +100,7 @@ def _dashboard_context(request: Request, db: Session, edit_id: Optional[int], pr
         "recent_leads": recent_leads,
         "edit_tenant": edit_tenant,
         "niches": niches,
-        "webhook_url": str(request.base_url).rstrip("/") + "/webhooks/retell",
+        "webhook_url": _public_webhook_url(request),
         "provision_error": provision_error,
     }
 

@@ -30,6 +30,10 @@ def test_login_and_manage_tenant_via_panel():
     resp = client.get("/admin")
     assert resp.status_code == 200
     assert "/webhooks/retell" in resp.text
+    # TestClient's default host is "testserver" over plain http, same as how
+    # requests actually arrive at this app behind Railway's proxy - the
+    # displayed URL must still say https, not echo the scheme it arrived as.
+    assert "https://testserver/webhooks/retell" in resp.text
 
     resp = client.post(
         "/admin/tenants",
