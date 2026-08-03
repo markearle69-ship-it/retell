@@ -73,7 +73,12 @@ def create_retell_agent(niche: "NicheTemplate", tenant: "Tenant") -> tuple[str, 
             {
                 "type": "end_call",
                 "name": "end_call",
-                "description": "End the call.",
+                "description": (
+                    "End the call immediately. Use this both at the natural close of a normal "
+                    "call (after saying goodbye), and the instant you detect the caller is a "
+                    "robocall, scam, or automated spam system rather than a real customer - in "
+                    "the spam case, call this tool right away with no spoken reply at all."
+                ),
                 "speak_during_execution": False,
             }
         ],
