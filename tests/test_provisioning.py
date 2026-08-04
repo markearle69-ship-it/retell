@@ -122,6 +122,29 @@ def test_create_retell_agent_substitutes_niche_level_variables(monkeypatch):
     assert "end_call" in tool_types
 
 
+def test_webhook_url_blank_when_not_configured():
+    assert provisioning.settings.public_base_url == ""
+    assert provisioning.webhook_url() is None
+
+
+def test_create_retell_agent_sets_webhook_url_when_configured(monkeypatch):
+    monkeypatch.setattr(provisioning.settings, "public_base_url", "https://example.up.railway.app")
+    captured = {}
+
+    class _CapturingClient(_FakeRetellClient):
+        def post(self, url, headers=None, json=None):
+            if url.endswith("/create-retell-llm"):
+                return _FakeResponse(200, "ok", json_data={"llm_id": "llm_captured"})
+            captured["agent_payload"] = json
+            return _FakeResponse(200, "ok", json_data={"agent_id": "agent_captured"})
+
+    monkeypatch.setattr(provisioning.httpx, "Client", _CapturingClient)
+
+    provisioning.create_retell_agent(_NicheStub(), _TenantStub())
+
+    assert captured["agent_payload"]["webhook_url"] == "https://example.up.railway.app/webhooks/retell"
+
+
 @pytest.fixture
 def db():
     session = SessionLocal()

@@ -5,6 +5,13 @@ class Settings(BaseSettings):
     # Retell
     retell_api_key: str = ""
 
+    # This service's own public URL, e.g. https://retell-production-b640.up.railway.app
+    # (no trailing slash). Used to set webhook_url explicitly on every agent this
+    # service creates, and for what the admin panel displays - both derived from
+    # one authoritative value instead of guessing the scheme from the incoming
+    # request, which is unreliable behind Railway's reverse proxy.
+    public_base_url: str = ""
+
     # Storage
     database_url: str = "sqlite:///./retell_leads.db"
 

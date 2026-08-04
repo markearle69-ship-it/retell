@@ -18,6 +18,15 @@ def test_login_wrong_password():
     assert "Incorrect password" in resp.text
 
 
+def test_dashboard_prefers_configured_public_base_url(monkeypatch):
+    monkeypatch.setattr(settings, "public_base_url", "https://example.up.railway.app")
+    client = TestClient(app)
+    client.post("/admin/login", data={"password": settings.admin_api_key}, follow_redirects=False)
+
+    resp = client.get("/admin")
+    assert "https://example.up.railway.app/webhooks/retell" in resp.text
+
+
 def test_login_and_manage_tenant_via_panel():
     client = TestClient(app)
 

@@ -59,6 +59,12 @@ def _retell_headers() -> dict:
     }
 
 
+def webhook_url() -> str | None:
+    if not settings.public_base_url:
+        return None
+    return settings.public_base_url.rstrip("/") + "/webhooks/retell"
+
+
 def create_retell_agent(niche: "NicheTemplate", tenant: "Tenant") -> tuple[str, str]:
     """Create a Retell LLM (rendered prompt) + Agent using it. Returns (llm_id, agent_id)."""
     variables = _template_variables(tenant, niche)
@@ -105,6 +111,12 @@ def create_retell_agent(niche: "NicheTemplate", tenant: "Tenant") -> tuple[str, 
             "voice_id": niche.voice_id,
             "response_engine": {"type": "retell-llm", "llm_id": llm_id},
         }
+        hook_url = webhook_url()
+        if hook_url:
+            # Set explicitly rather than relying on the account-level webhook
+            # inheriting to API-created agents - that inheritance not reliably
+            # applying was the likely cause of leads silently going missing.
+            agent_payload["webhook_url"] = hook_url
         try:
             resp = client.post(
                 f"{RETELL_API_BASE}/create-agent", headers=_retell_headers(), json=agent_payload

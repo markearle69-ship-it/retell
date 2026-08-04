@@ -7,7 +7,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from . import models
+from . import models, provisioning
 from .config import settings
 from .db import get_db
 from .provisioning import ProvisioningError, provision_site
@@ -29,10 +29,16 @@ class NotAuthenticated(Exception):
 
 
 def _public_webhook_url(request: Request) -> str:
-    """request.base_url reports "http" behind Railway's proxy, since TLS is
+    """Prefer the explicit PUBLIC_BASE_URL setting (also what gets set on each
+    agent's own webhook_url at creation time - see provisioning.webhook_url()).
+    Falls back to guessing from the request if that isn't configured yet:
+    request.base_url reports "http" behind Railway's proxy, since TLS is
     terminated at the edge and the request reaches this container as plain
-    HTTP - there's no proxy-header trust configured to correct it. Force
+    HTTP - there's no proxy-header trust configured to correct it, so force
     https except for actual local dev, where http is genuinely correct."""
+    configured = provisioning.webhook_url()
+    if configured:
+        return configured
     base = request.base_url
     scheme = "https" if base.hostname not in ("localhost", "127.0.0.1") else base.scheme
     return f"{scheme}://{base.netloc}/webhooks/retell"
