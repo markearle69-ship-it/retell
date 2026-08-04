@@ -8,10 +8,10 @@ from app.db import SessionLocal
 
 
 class _FakeResponse:
-    def __init__(self, status_code: int, text: str, json_data: dict | None = None):
+    def __init__(self, status_code: int, text: str, json_data: dict | list | None = None):
         self.status_code = status_code
         self.text = text
-        self._json_data = json_data or {}
+        self._json_data = json_data if json_data is not None else {}
 
     def raise_for_status(self):
         if self.status_code >= 400:
@@ -20,6 +20,12 @@ class _FakeResponse:
 
     def json(self):
         return self._json_data
+
+
+# Voice list used by every fake client's default .get() - includes the voice_id
+# every _NicheStub in this file uses, so the pre-flight validation in
+# create_retell_agent passes and tests can exercise the steps after it.
+_FAKE_VOICE_LIST = [{"voice_id": "bad-voice-id"}, {"voice_id": "11labs-Marissa"}]
 
 
 class _FakeRetellClient:
@@ -31,6 +37,9 @@ class _FakeRetellClient:
 
     def __exit__(self, *args):
         return False
+
+    def get(self, url, headers=None):
+        return _FakeResponse(200, "ok", json_data=_FAKE_VOICE_LIST)
 
     def post(self, url, headers=None, json=None):
         return _FakeResponse(400, '{"status":"error","message":"Phone number already exists."}')
@@ -48,6 +57,7 @@ def test_import_number_already_exists_gives_actionable_message(monkeypatch):
 
 
 class _NicheStub:
+    name = "Test Niche"
     prompt_template = "Prompt for {{business_name}}, covering {{service_description}}: {{collect_list}}"
     begin_message_template = None
     model = "gpt-4.1"
@@ -61,6 +71,30 @@ class _TenantStub:
     business_name = "Test Business"
     location = "Testville"
     zip_codes = "00000"
+
+
+def test_create_retell_agent_rejects_unknown_voice_id_before_creating_anything(monkeypatch):
+    class _UnknownVoiceNiche(_NicheStub):
+        name = "Concrete Contractor"
+        voice_id = "11Labs-Marissa"  # wrong case - not in _FAKE_VOICE_LIST
+
+    posted = []
+
+    class _TrackingClient(_FakeRetellClient):
+        def post(self, url, headers=None, json=None):
+            posted.append(url)
+            return _FakeResponse(200, "ok", json_data={"llm_id": "should_not_happen"})
+
+    monkeypatch.setattr(provisioning.httpx, "Client", _TrackingClient)
+
+    with pytest.raises(provisioning.ProvisioningError) as exc_info:
+        provisioning.create_retell_agent(_UnknownVoiceNiche(), _TenantStub())
+
+    message = str(exc_info.value)
+    assert "11Labs-Marissa" in message
+    assert "Concrete Contractor" in message
+    assert "case mismatch" in message
+    assert posted == []  # no LLM or agent creation attempted
 
 
 def test_create_retell_agent_reports_llm_step_failure(monkeypatch):

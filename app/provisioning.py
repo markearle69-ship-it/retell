@@ -65,8 +65,32 @@ def webhook_url() -> str | None:
     return settings.public_base_url.rstrip("/") + "/webhooks/retell"
 
 
+def list_retell_voice_ids() -> set[str]:
+    try:
+        with httpx.Client(timeout=15) as client:
+            resp = client.get(f"{RETELL_API_BASE}/list-voices", headers=_retell_headers())
+            resp.raise_for_status()
+            return {v["voice_id"] for v in resp.json()}
+    except httpx.HTTPError as exc:
+        raise ProvisioningError(f"Failed to fetch Retell's voice list: {exc}") from exc
+
+
 def create_retell_agent(niche: "NicheTemplate", tenant: "Tenant") -> tuple[str, str]:
     """Create a Retell LLM (rendered prompt) + Agent using it. Returns (llm_id, agent_id)."""
+    # Checked up front, before creating anything: a bad voice_id (wrong case,
+    # typo, or copy-pasted from the wrong place) has repeatedly only surfaced
+    # as a generic 404 partway through, after an LLM was already created and
+    # orphaned. voice_id lookups on Retell's side are case-sensitive even
+    # though that's not documented, so an exact-match check here catches it
+    # immediately and for free, with a message that says exactly what's wrong.
+    available_voices = list_retell_voice_ids()
+    if niche.voice_id not in available_voices:
+        raise ProvisioningError(
+            f"Voice ID '{niche.voice_id}' (niche '{niche.name}') was not found in your Retell "
+            "account's voice list - check /admin/niches for a typo or case mismatch (voice IDs "
+            "are case-sensitive). No LLM or agent was created for this attempt."
+        )
+
     variables = _template_variables(tenant, niche)
     llm_payload = {
         "general_prompt": render_template(niche.prompt_template, variables),
