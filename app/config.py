@@ -18,7 +18,11 @@ class Settings(BaseSettings):
     # Admin API access (protects /tenants and /leads)
     admin_api_key: str = "change-me"
 
-    # Email notifications (SMTP)
+    # Email notifications. Preferred: Postmark's API (postmark_api_token set) -
+    # only needs smtp_from for the sender address, everything else is ignored.
+    # Falls back to generic SMTP if postmark_api_token is blank, for any other
+    # provider.
+    postmark_api_token: str = ""
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_user: str = ""
