@@ -464,3 +464,54 @@ def test_sync_existing_agent_treats_already_published_as_success(monkeypatch):
 
     status = provisioning.sync_existing_agent(_TenantWithIdsStub(), "Some rule.")
     assert status == "updated"
+
+
+def test_sync_existing_agent_retries_patch_after_publishing_a_fresh_draft(monkeypatch):
+    calls = {"patch": 0, "publish": 0}
+
+    class _Client(_FakeRetellClient):
+        def get(self, url, headers=None):
+            return _FakeResponse(
+                200, "ok", json_data={"general_prompt": "Niche prompt here.", "general_tools": []}
+            )
+
+        def patch(self, url, headers=None, json=None):
+            calls["patch"] += 1
+            if calls["patch"] == 1:
+                return _FakeResponse(
+                    400, '{"status":"error","message":"Cannot update published LLM"}'
+                )
+            return _FakeResponse(200, "ok")
+
+        def post(self, url, headers=None, json=None):
+            calls["publish"] += 1
+            return _FakeResponse(200, "ok")
+
+    monkeypatch.setattr(provisioning.httpx, "Client", _Client)
+
+    status = provisioning.sync_existing_agent(_TenantWithIdsStub(), "Some rule.")
+
+    assert status == "updated"
+    assert calls["patch"] == 2  # failed once, retried once after publishing a draft
+    assert calls["publish"] == 2  # the recovery publish, then the final make-it-live publish
+
+
+def test_sync_existing_agent_reports_clear_error_if_retry_also_fails(monkeypatch):
+    class _Client(_FakeRetellClient):
+        def get(self, url, headers=None):
+            return _FakeResponse(
+                200, "ok", json_data={"general_prompt": "Niche prompt here.", "general_tools": []}
+            )
+
+        def patch(self, url, headers=None, json=None):
+            return _FakeResponse(400, '{"status":"error","message":"Cannot update published LLM"}')
+
+        def post(self, url, headers=None, json=None):
+            return _FakeResponse(200, "ok")
+
+    monkeypatch.setattr(provisioning.httpx, "Client", _Client)
+
+    with pytest.raises(provisioning.ProvisioningError) as exc_info:
+        provisioning.sync_existing_agent(_TenantWithIdsStub(), "Some rule.")
+
+    assert "even after creating a fresh draft" in str(exc_info.value)

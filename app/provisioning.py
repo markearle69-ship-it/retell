@@ -222,17 +222,46 @@ def sync_existing_agent(tenant: "Tenant", shared_rules: str) -> str:
         new_prompt = f"{shared_rules.strip()}\n\n{current_prompt}" if needs_rules else current_prompt
         new_tools = current_tools + [END_CALL_TOOL] if needs_end_call else current_tools
 
+        llm_update_payload = {"general_prompt": new_prompt, "general_tools": new_tools}
         try:
             resp = client.patch(
                 f"{RETELL_API_BASE}/update-retell-llm/{tenant.retell_llm_id}",
                 headers=_retell_headers(),
-                json={"general_prompt": new_prompt, "general_tools": new_tools},
+                json=llm_update_payload,
             )
             resp.raise_for_status()
         except httpx.HTTPStatusError as exc:
-            raise ProvisioningError(
-                f"Failed to update LLM {tenant.retell_llm_id}: {exc.response.status_code} {exc.response.text}"
-            ) from exc
+            if "cannot update published" not in exc.response.text.lower():
+                raise ProvisioningError(
+                    f"Failed to update LLM {tenant.retell_llm_id}: {exc.response.status_code} {exc.response.text}"
+                ) from exc
+            # The LLM's latest version is fully published - only a draft can be
+            # edited. Per Retell's docs, publishing again creates a fresh draft
+            # as a side effect even when there's nothing new to publish, so
+            # retry the patch once after that.
+            try:
+                pub_resp = client.post(
+                    f"{RETELL_API_BASE}/publish-agent/{tenant.retell_agent_id}", headers=_retell_headers()
+                )
+                pub_resp.raise_for_status()
+            except httpx.HTTPError:
+                pass  # best effort - if this didn't help, the retry below reports a clear error anyway
+            try:
+                resp = client.patch(
+                    f"{RETELL_API_BASE}/update-retell-llm/{tenant.retell_llm_id}",
+                    headers=_retell_headers(),
+                    json=llm_update_payload,
+                )
+                resp.raise_for_status()
+            except httpx.HTTPStatusError as exc2:
+                raise ProvisioningError(
+                    f"Failed to update LLM {tenant.retell_llm_id} even after creating a fresh draft: "
+                    f"{exc2.response.status_code} {exc2.response.text}"
+                ) from exc2
+            except httpx.HTTPError as exc2:
+                raise ProvisioningError(
+                    f"Failed to update LLM {tenant.retell_llm_id} even after creating a fresh draft: {exc2}"
+                ) from exc2
         except httpx.HTTPError as exc:
             raise ProvisioningError(f"Failed to update LLM {tenant.retell_llm_id}: {exc}") from exc
 
