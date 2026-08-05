@@ -242,10 +242,17 @@ def sync_existing_agent(tenant: "Tenant", shared_rules: str) -> str:
             )
             resp.raise_for_status()
         except httpx.HTTPStatusError as exc:
-            raise ProvisioningError(
-                f"LLM updated but publishing agent {tenant.retell_agent_id} failed - the change "
-                f"was saved as a draft, not live yet: {exc.response.status_code} {exc.response.text}"
-            ) from exc
+            # Updating the LLM directly (as opposed to editing in Retell's
+            # dashboard UI, which creates an explicit draft) takes effect
+            # immediately with nothing left to publish - "already published"
+            # means the change is already live, not that anything failed.
+            if "already published" in exc.response.text.lower():
+                pass
+            else:
+                raise ProvisioningError(
+                    f"LLM updated but publishing agent {tenant.retell_agent_id} failed - the change "
+                    f"was saved as a draft, not live yet: {exc.response.status_code} {exc.response.text}"
+                ) from exc
         except httpx.HTTPError as exc:
             raise ProvisioningError(
                 f"LLM updated but publishing agent {tenant.retell_agent_id} failed - the change "

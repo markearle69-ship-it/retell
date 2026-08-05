@@ -445,3 +445,22 @@ def test_sync_existing_agent_reports_publish_failure_distinctly(monkeypatch):
         provisioning.sync_existing_agent(_TenantWithIdsStub(), "Some rule.")
 
     assert "saved as a draft, not live yet" in str(exc_info.value)
+
+
+def test_sync_existing_agent_treats_already_published_as_success(monkeypatch):
+    class _Client(_FakeRetellClient):
+        def get(self, url, headers=None):
+            return _FakeResponse(
+                200, "ok", json_data={"general_prompt": "Niche prompt here.", "general_tools": []}
+            )
+
+        def patch(self, url, headers=None, json=None):
+            return _FakeResponse(200, "ok")
+
+        def post(self, url, headers=None, json=None):
+            return _FakeResponse(400, '{"status":"error","message":"Agent already published."}')
+
+    monkeypatch.setattr(provisioning.httpx, "Client", _Client)
+
+    status = provisioning.sync_existing_agent(_TenantWithIdsStub(), "Some rule.")
+    assert status == "updated"
