@@ -256,6 +256,7 @@ def sync_existing_agents(request: Request, db: Session = Depends(get_db)):
     for tenant in tenants:
         try:
             status = provisioning.sync_existing_agent(tenant, shared_rules)
+            db.commit()  # persists tenant.retell_llm_id if sync_existing_agent replaced it
         except ProvisioningError as exc:
             status = f"error: {exc}"
         results.append({"business_name": tenant.business_name, "status": status})
@@ -276,6 +277,7 @@ def sync_one_agent(request: Request, tenant_id: int, db: Session = Depends(get_d
     shared_rules = provisioning.get_global_prompt_config(db).shared_rules
     try:
         status = provisioning.sync_existing_agent(tenant, shared_rules)
+        db.commit()  # persists tenant.retell_llm_id if sync_existing_agent replaced it
     except ProvisioningError as exc:
         status = f"error: {exc}"
 

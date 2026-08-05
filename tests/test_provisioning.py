@@ -394,50 +394,110 @@ def test_sync_existing_agent_already_up_to_date(monkeypatch):
     assert calls["patch"] == 0
 
 
-def test_sync_existing_agent_patches_and_publishes_when_missing(monkeypatch):
+def test_sync_existing_agent_creates_new_llm_and_repoints_agent_when_missing(monkeypatch):
     captured = {}
 
     class _Client(_FakeRetellClient):
         def get(self, url, headers=None):
             return _FakeResponse(
-                200, "ok", json_data={"general_prompt": "Niche prompt here.", "general_tools": []}
+                200,
+                "ok",
+                json_data={
+                    "general_prompt": "Niche prompt here.",
+                    "general_tools": [],
+                    "model": "gpt-4.1",
+                    "start_speaker": "agent",
+                    "begin_message": "Hi there!",
+                },
             )
 
-        def patch(self, url, headers=None, json=None):
-            captured["patch_url"] = url
-            captured["patch_payload"] = json
+        def post(self, url, headers=None, json=None):
+            if url.endswith("/create-retell-llm"):
+                captured["create_llm_payload"] = json
+                return _FakeResponse(200, "ok", json_data={"llm_id": "llm_new"})
+            captured["publish_url"] = url
             return _FakeResponse(200, "ok")
 
-        def post(self, url, headers=None, json=None):
-            captured["publish_url"] = url
+        def patch(self, url, headers=None, json=None):
+            captured["repoint_url"] = url
+            captured["repoint_payload"] = json
             return _FakeResponse(200, "ok")
 
     monkeypatch.setattr(provisioning.httpx, "Client", _Client)
 
-    status = provisioning.sync_existing_agent(
-        _TenantWithIdsStub(retell_llm_id="llm_x", retell_agent_id="agent_x"), "Some rule."
-    )
+    tenant = _TenantWithIdsStub(retell_llm_id="llm_x", retell_agent_id="agent_x")
+    status = provisioning.sync_existing_agent(tenant, "Some rule.")
 
     assert status == "updated"
-    assert captured["patch_url"] == f"{provisioning.RETELL_API_BASE}/update-retell-llm/llm_x"
-    assert captured["patch_payload"]["general_prompt"].startswith("Some rule.")
-    assert "Niche prompt here." in captured["patch_payload"]["general_prompt"]
-    assert provisioning.END_CALL_TOOL in captured["patch_payload"]["general_tools"]
+    assert captured["create_llm_payload"]["general_prompt"].startswith("Some rule.")
+    assert "Niche prompt here." in captured["create_llm_payload"]["general_prompt"]
+    assert provisioning.END_CALL_TOOL in captured["create_llm_payload"]["general_tools"]
+    assert captured["create_llm_payload"]["begin_message"] == "Hi there!"
+
+    assert captured["repoint_url"] == f"{provisioning.RETELL_API_BASE}/update-agent/agent_x"
+    assert captured["repoint_payload"]["response_engine"] == {"type": "retell-llm", "llm_id": "llm_new"}
+
     assert captured["publish_url"] == f"{provisioning.RETELL_API_BASE}/publish-agent/agent_x"
 
+    # The tenant's llm_id is updated in place so the DB record and Retell agree.
+    assert tenant.retell_llm_id == "llm_new"
 
-def test_sync_existing_agent_reports_publish_failure_distinctly(monkeypatch):
+
+def test_sync_existing_agent_reports_create_llm_failure(monkeypatch):
     class _Client(_FakeRetellClient):
         def get(self, url, headers=None):
             return _FakeResponse(
                 200, "ok", json_data={"general_prompt": "Niche prompt here.", "general_tools": []}
             )
 
-        def patch(self, url, headers=None, json=None):
-            return _FakeResponse(200, "ok")
-
         def post(self, url, headers=None, json=None):
             return _FakeResponse(500, "server error")
+
+    monkeypatch.setattr(provisioning.httpx, "Client", _Client)
+
+    with pytest.raises(provisioning.ProvisioningError) as exc_info:
+        provisioning.sync_existing_agent(_TenantWithIdsStub(), "Some rule.")
+
+    assert "Failed to create replacement LLM" in str(exc_info.value)
+
+
+def test_sync_existing_agent_reports_repoint_failure_with_new_llm_id(monkeypatch):
+    class _Client(_FakeRetellClient):
+        def get(self, url, headers=None):
+            return _FakeResponse(
+                200, "ok", json_data={"general_prompt": "Niche prompt here.", "general_tools": []}
+            )
+
+        def post(self, url, headers=None, json=None):
+            return _FakeResponse(200, "ok", json_data={"llm_id": "llm_new"})
+
+        def patch(self, url, headers=None, json=None):
+            return _FakeResponse(500, "server error")
+
+    monkeypatch.setattr(provisioning.httpx, "Client", _Client)
+
+    with pytest.raises(provisioning.ProvisioningError) as exc_info:
+        provisioning.sync_existing_agent(_TenantWithIdsStub(), "Some rule.")
+
+    message = str(exc_info.value)
+    assert "llm_new" in message
+    assert "safe to delete if this doesn't get resolved" in message
+
+
+def test_sync_existing_agent_reports_publish_failure_after_repoint(monkeypatch):
+    class _Client(_FakeRetellClient):
+        def get(self, url, headers=None):
+            return _FakeResponse(
+                200, "ok", json_data={"general_prompt": "Niche prompt here.", "general_tools": []}
+            )
+
+        def post(self, url, headers=None, json=None):
+            if url.endswith("/create-retell-llm"):
+                return _FakeResponse(200, "ok", json_data={"llm_id": "llm_new"})
+            return _FakeResponse(500, "server error")
+
+        def patch(self, url, headers=None, json=None):
+            return _FakeResponse(200, "ok")
 
     monkeypatch.setattr(provisioning.httpx, "Client", _Client)
 
@@ -454,64 +514,17 @@ def test_sync_existing_agent_treats_already_published_as_success(monkeypatch):
                 200, "ok", json_data={"general_prompt": "Niche prompt here.", "general_tools": []}
             )
 
-        def patch(self, url, headers=None, json=None):
-            return _FakeResponse(200, "ok")
-
         def post(self, url, headers=None, json=None):
+            if url.endswith("/create-retell-llm"):
+                return _FakeResponse(200, "ok", json_data={"llm_id": "llm_new"})
             return _FakeResponse(400, '{"status":"error","message":"Agent already published."}')
 
-    monkeypatch.setattr(provisioning.httpx, "Client", _Client)
-
-    status = provisioning.sync_existing_agent(_TenantWithIdsStub(), "Some rule.")
-    assert status == "updated"
-
-
-def test_sync_existing_agent_retries_patch_after_publishing_a_fresh_draft(monkeypatch):
-    calls = {"patch": 0, "publish": 0}
-
-    class _Client(_FakeRetellClient):
-        def get(self, url, headers=None):
-            return _FakeResponse(
-                200, "ok", json_data={"general_prompt": "Niche prompt here.", "general_tools": []}
-            )
-
         def patch(self, url, headers=None, json=None):
-            calls["patch"] += 1
-            if calls["patch"] == 1:
-                return _FakeResponse(
-                    400, '{"status":"error","message":"Cannot update published LLM"}'
-                )
-            return _FakeResponse(200, "ok")
-
-        def post(self, url, headers=None, json=None):
-            calls["publish"] += 1
             return _FakeResponse(200, "ok")
 
     monkeypatch.setattr(provisioning.httpx, "Client", _Client)
 
-    status = provisioning.sync_existing_agent(_TenantWithIdsStub(), "Some rule.")
-
+    tenant = _TenantWithIdsStub()
+    status = provisioning.sync_existing_agent(tenant, "Some rule.")
     assert status == "updated"
-    assert calls["patch"] == 2  # failed once, retried once after publishing a draft
-    assert calls["publish"] == 2  # the recovery publish, then the final make-it-live publish
-
-
-def test_sync_existing_agent_reports_clear_error_if_retry_also_fails(monkeypatch):
-    class _Client(_FakeRetellClient):
-        def get(self, url, headers=None):
-            return _FakeResponse(
-                200, "ok", json_data={"general_prompt": "Niche prompt here.", "general_tools": []}
-            )
-
-        def patch(self, url, headers=None, json=None):
-            return _FakeResponse(400, '{"status":"error","message":"Cannot update published LLM"}')
-
-        def post(self, url, headers=None, json=None):
-            return _FakeResponse(200, "ok")
-
-    monkeypatch.setattr(provisioning.httpx, "Client", _Client)
-
-    with pytest.raises(provisioning.ProvisioningError) as exc_info:
-        provisioning.sync_existing_agent(_TenantWithIdsStub(), "Some rule.")
-
-    assert "even after creating a fresh draft" in str(exc_info.value)
+    assert tenant.retell_llm_id == "llm_new"

@@ -222,48 +222,53 @@ def sync_existing_agent(tenant: "Tenant", shared_rules: str) -> str:
         new_prompt = f"{shared_rules.strip()}\n\n{current_prompt}" if needs_rules else current_prompt
         new_tools = current_tools + [END_CALL_TOOL] if needs_end_call else current_tools
 
-        llm_update_payload = {"general_prompt": new_prompt, "general_tools": new_tools}
+        # Retell's published LLM versions are immutable - only a draft can be
+        # edited, and (confirmed against a live account) publishing the agent
+        # again does not unlock the existing LLM for editing either. Instead,
+        # create a fresh (unpublished) LLM carrying the current settings
+        # forward, and repoint the agent at it: update-agent operates on the
+        # agent's draft version (creating one automatically) even while the
+        # agent is published, unlike the LLM resource.
+        new_llm_payload = {
+            "general_prompt": new_prompt,
+            "general_tools": new_tools,
+            "model": current.get("model") or "gpt-4.1",
+            "start_speaker": current.get("start_speaker") or "agent",
+        }
+        if current.get("begin_message"):
+            new_llm_payload["begin_message"] = current["begin_message"]
+
         try:
-            resp = client.patch(
-                f"{RETELL_API_BASE}/update-retell-llm/{tenant.retell_llm_id}",
-                headers=_retell_headers(),
-                json=llm_update_payload,
+            resp = client.post(
+                f"{RETELL_API_BASE}/create-retell-llm", headers=_retell_headers(), json=new_llm_payload
             )
             resp.raise_for_status()
         except httpx.HTTPStatusError as exc:
-            if "cannot update published" not in exc.response.text.lower():
-                raise ProvisioningError(
-                    f"Failed to update LLM {tenant.retell_llm_id}: {exc.response.status_code} {exc.response.text}"
-                ) from exc
-            # The LLM's latest version is fully published - only a draft can be
-            # edited. Per Retell's docs, publishing again creates a fresh draft
-            # as a side effect even when there's nothing new to publish, so
-            # retry the patch once after that.
-            try:
-                pub_resp = client.post(
-                    f"{RETELL_API_BASE}/publish-agent/{tenant.retell_agent_id}", headers=_retell_headers()
-                )
-                pub_resp.raise_for_status()
-            except httpx.HTTPError:
-                pass  # best effort - if this didn't help, the retry below reports a clear error anyway
-            try:
-                resp = client.patch(
-                    f"{RETELL_API_BASE}/update-retell-llm/{tenant.retell_llm_id}",
-                    headers=_retell_headers(),
-                    json=llm_update_payload,
-                )
-                resp.raise_for_status()
-            except httpx.HTTPStatusError as exc2:
-                raise ProvisioningError(
-                    f"Failed to update LLM {tenant.retell_llm_id} even after creating a fresh draft: "
-                    f"{exc2.response.status_code} {exc2.response.text}"
-                ) from exc2
-            except httpx.HTTPError as exc2:
-                raise ProvisioningError(
-                    f"Failed to update LLM {tenant.retell_llm_id} even after creating a fresh draft: {exc2}"
-                ) from exc2
+            raise ProvisioningError(
+                f"Failed to create replacement LLM: {exc.response.status_code} {exc.response.text}"
+            ) from exc
         except httpx.HTTPError as exc:
-            raise ProvisioningError(f"Failed to update LLM {tenant.retell_llm_id}: {exc}") from exc
+            raise ProvisioningError(f"Failed to create replacement LLM: {exc}") from exc
+        new_llm_id = resp.json()["llm_id"]
+
+        try:
+            resp = client.patch(
+                f"{RETELL_API_BASE}/update-agent/{tenant.retell_agent_id}",
+                headers=_retell_headers(),
+                json={"response_engine": {"type": "retell-llm", "llm_id": new_llm_id}},
+            )
+            resp.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            raise ProvisioningError(
+                f"Created replacement LLM {new_llm_id} (safe to delete if this doesn't get resolved) "
+                f"but repointing agent {tenant.retell_agent_id} at it failed: "
+                f"{exc.response.status_code} {exc.response.text}"
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise ProvisioningError(
+                f"Created replacement LLM {new_llm_id} (safe to delete if this doesn't get resolved) "
+                f"but repointing agent {tenant.retell_agent_id} at it failed: {exc}"
+            ) from exc
 
         try:
             resp = client.post(
@@ -271,23 +276,20 @@ def sync_existing_agent(tenant: "Tenant", shared_rules: str) -> str:
             )
             resp.raise_for_status()
         except httpx.HTTPStatusError as exc:
-            # Updating the LLM directly (as opposed to editing in Retell's
-            # dashboard UI, which creates an explicit draft) takes effect
-            # immediately with nothing left to publish - "already published"
-            # means the change is already live, not that anything failed.
-            if "already published" in exc.response.text.lower():
-                pass
-            else:
+            if "already published" not in exc.response.text.lower():
                 raise ProvisioningError(
-                    f"LLM updated but publishing agent {tenant.retell_agent_id} failed - the change "
+                    f"Agent now points at the new LLM {new_llm_id} but publishing failed - the change "
                     f"was saved as a draft, not live yet: {exc.response.status_code} {exc.response.text}"
                 ) from exc
         except httpx.HTTPError as exc:
             raise ProvisioningError(
-                f"LLM updated but publishing agent {tenant.retell_agent_id} failed - the change "
+                f"Agent now points at the new LLM {new_llm_id} but publishing failed - the change "
                 f"was saved as a draft, not live yet: {exc}"
             ) from exc
 
+    # The old LLM (tenant.retell_llm_id) is now orphaned but harmless - not
+    # deleted automatically, since Retell has no delete-llm API to call here.
+    tenant.retell_llm_id = new_llm_id
     return "updated"
 
 
