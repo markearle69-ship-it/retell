@@ -281,3 +281,39 @@ def test_sync_existing_agents_bulk_action(monkeypatch):
     # manual (never-provisioned) site from this test wasn't included.
     assert "Provisioned Site" in seen_business_names
     assert "Manual Site" not in seen_business_names
+
+
+def test_sync_one_agent(monkeypatch):
+    client = _logged_in_client()
+
+    client.post(
+        "/admin/tenants",
+        data={"business_name": "Single Sync Site", "to_number": "+15556670001"},
+        follow_redirects=False,
+    )
+
+    from app.db import SessionLocal
+    from app.models import Tenant
+
+    db = SessionLocal()
+    tenant = db.query(Tenant).filter(Tenant.to_number == "+15556670001").first()
+    tenant.retell_llm_id = "llm_single_test"
+    tenant.retell_agent_id = "agent_single_test"
+    tenant_id = tenant.id
+    db.commit()
+    db.close()
+
+    monkeypatch.setattr(
+        admin.provisioning, "sync_existing_agent", lambda tenant, shared_rules: "updated"
+    )
+
+    resp = client.post(f"/admin/tenants/{tenant_id}/sync")
+    assert resp.status_code == 200
+    assert "Single Sync Site" in resp.text
+    assert "Updated" in resp.text
+
+
+def test_sync_one_agent_404_for_unknown_tenant():
+    client = _logged_in_client()
+    resp = client.post("/admin/tenants/999999/sync")
+    assert resp.status_code == 404

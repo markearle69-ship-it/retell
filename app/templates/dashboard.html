@@ -114,6 +114,12 @@
         </td>
         <td>
           <a href="/admin?edit_id={{ t.id }}">Edit</a>
+          {% if t.retell_llm_id %}
+          &nbsp;
+          <form class="inline" method="post" action="/admin/tenants/{{ t.id }}/sync">
+            <button class="secondary" type="submit" title="Patch this site's existing LLM in place (add end_call / global rules if missing) and publish - no new agent, no phone routing changes">Sync</button>
+          </form>
+          {% endif %}
           &nbsp;
           <form class="inline" method="post" action="/admin/tenants/{{ t.id }}/delete"
                 onsubmit="return confirm('Remove {{ t.business_name }}?');">

@@ -263,6 +263,29 @@ def sync_existing_agents(request: Request, db: Session = Depends(get_db)):
     return templates.TemplateResponse(request, "sync_results.html", {"results": results})
 
 
+@router.post(
+    "/tenants/{tenant_id}/sync", response_class=HTMLResponse, dependencies=[Depends(require_admin_session)]
+)
+def sync_one_agent(request: Request, tenant_id: int, db: Session = Depends(get_db)):
+    """Same as sync_existing_agents but for a single site - for testing the
+    patch/publish workflow cautiously before running it against every site."""
+    tenant = db.query(models.Tenant).filter(models.Tenant.id == tenant_id).first()
+    if tenant is None:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    shared_rules = provisioning.get_global_prompt_config(db).shared_rules
+    try:
+        status = provisioning.sync_existing_agent(tenant, shared_rules)
+    except ProvisioningError as exc:
+        status = f"error: {exc}"
+
+    return templates.TemplateResponse(
+        request,
+        "sync_results.html",
+        {"results": [{"business_name": tenant.business_name, "status": status}]},
+    )
+
+
 @router.post("/niches", dependencies=[Depends(require_admin_session)])
 def upsert_niche(
     niche_id: Optional[int] = Form(None),
