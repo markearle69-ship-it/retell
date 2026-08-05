@@ -16,9 +16,12 @@
   th, td { text-align: left; padding: 0.5rem 0.6rem; border-bottom: 1px solid #e5e5e7; vertical-align: top; }
   @media (prefers-color-scheme: dark) { th, td { border-bottom: 1px solid #2c313a; } }
   th { font-weight: 600; color: #666; }
-  input, button { font: inherit; padding: 0.45rem 0.6rem; border-radius: 6px; border: 1px solid #ccc; }
+  input, select, textarea, button { font: inherit; padding: 0.45rem 0.6rem; border-radius: 6px; border: 1px solid #ccc; box-sizing: border-box; }
+  input, select, textarea { width: 100%; }
+  input[type="checkbox"] { width: auto; }
   form.inline { display: inline; }
   .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.75rem; align-items: end; }
+  .form-grid > div { min-width: 0; }
   .form-grid label { display: block; font-size: 0.8rem; color: #666; margin-bottom: 0.25rem; }
   button { background: #2563eb; color: white; border: none; cursor: pointer; }
   button.secondary { background: #6b7280; }
