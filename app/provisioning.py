@@ -21,6 +21,8 @@ from twilio.rest import Client as TwilioClient
 from .config import settings
 
 if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
+
     from .models import NicheTemplate, Tenant
 
 RETELL_API_BASE = "https://api.retellai.com"
@@ -65,6 +67,21 @@ def webhook_url() -> str | None:
     return settings.public_base_url.rstrip("/") + "/webhooks/retell"
 
 
+def get_global_prompt_config(db: "Session"):
+    """The single row of rules prepended to every niche's prompt (e.g. "never
+    claim to be human") - maintained once here instead of copy-pasted into
+    every niche template. Created with the default text on first access."""
+    from .models import DEFAULT_GLOBAL_PROMPT_RULES, GlobalPromptConfig
+
+    config = db.query(GlobalPromptConfig).first()
+    if config is None:
+        config = GlobalPromptConfig(shared_rules=DEFAULT_GLOBAL_PROMPT_RULES)
+        db.add(config)
+        db.commit()
+        db.refresh(config)
+    return config
+
+
 def list_retell_voice_ids() -> set[str]:
     try:
         with httpx.Client(timeout=15) as client:
@@ -75,7 +92,7 @@ def list_retell_voice_ids() -> set[str]:
         raise ProvisioningError(f"Failed to fetch Retell's voice list: {exc}") from exc
 
 
-def create_retell_agent(niche: "NicheTemplate", tenant: "Tenant") -> tuple[str, str]:
+def create_retell_agent(niche: "NicheTemplate", tenant: "Tenant", shared_rules: str = "") -> tuple[str, str]:
     """Create a Retell LLM (rendered prompt) + Agent using it. Returns (llm_id, agent_id)."""
     # Checked up front, before creating anything: a bad voice_id (wrong case,
     # typo, or copy-pasted from the wrong place) has repeatedly only surfaced
@@ -92,8 +109,12 @@ def create_retell_agent(niche: "NicheTemplate", tenant: "Tenant") -> tuple[str, 
         )
 
     variables = _template_variables(tenant, niche)
+    rendered_niche_prompt = render_template(niche.prompt_template, variables)
+    general_prompt = (
+        f"{shared_rules.strip()}\n\n{rendered_niche_prompt}" if shared_rules.strip() else rendered_niche_prompt
+    )
     llm_payload = {
-        "general_prompt": render_template(niche.prompt_template, variables),
+        "general_prompt": general_prompt,
         "model": niche.model or "gpt-4.1",
         "start_speaker": "agent",
         # Without this, a prompt instructing the agent to "invoke end_call" (e.g.
@@ -247,7 +268,8 @@ def provision_site(db, tenant: "Tenant", niche: "NicheTemplate") -> None:
     """Mutates and commits `tenant` step by step. Whatever succeeds is kept even if
     a later step raises, so a resubmit only retries what's left."""
     if not tenant.retell_llm_id or not tenant.retell_agent_id:
-        llm_id, agent_id = create_retell_agent(niche, tenant)
+        shared_rules = get_global_prompt_config(db).shared_rules
+        llm_id, agent_id = create_retell_agent(niche, tenant, shared_rules)
         tenant.retell_llm_id = llm_id
         tenant.retell_agent_id = agent_id
         db.commit()

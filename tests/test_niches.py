@@ -216,3 +216,24 @@ def test_force_reprovision_checkbox_shows_for_partial_state_not_just_full_succes
 
     resp = client.get(f"/admin?edit_id={tenant_id}")
     assert "force_reprovision" in resp.text
+
+
+def test_niches_page_shows_and_updates_global_prompt_rules():
+    client = _logged_in_client()
+
+    from app.models import DEFAULT_GLOBAL_PROMPT_RULES
+
+    resp = client.get("/admin/niches")
+    assert resp.status_code == 200
+    assert DEFAULT_GLOBAL_PROMPT_RULES in resp.text
+
+    resp = client.post(
+        "/admin/niches/global-rules",
+        data={"shared_rules": "Always say you are an AI assistant if asked."},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+
+    resp = client.get("/admin/niches")
+    assert "Always say you are an AI assistant if asked." in resp.text
+    assert DEFAULT_GLOBAL_PROMPT_RULES not in resp.text

@@ -15,6 +15,26 @@ from sqlalchemy.orm import relationship
 
 from .db import Base
 
+DEFAULT_GLOBAL_PROMPT_RULES = (
+    "If the caller directly asks whether you are a real person, a human, an AI, a bot, or "
+    "anything similar, answer honestly and immediately: you are an AI assistant / virtual "
+    "receptionist for the business, not a human. Never claim or imply you are human. After "
+    "disclosing this, reassure them you can still fully help - gather their details and get a "
+    "real technician on the team to call them back - and continue the call normally."
+)
+
+
+class GlobalPromptConfig(Base):
+    """Single-row config: rules prepended to every niche's rendered prompt, so
+    universal behavior (e.g. "never claim to be human") is maintained in one
+    place instead of copy-pasted into every niche template."""
+
+    __tablename__ = "global_prompt_config"
+
+    id = Column(Integer, primary_key=True)
+    shared_rules = Column(Text, nullable=False, default=DEFAULT_GLOBAL_PROMPT_RULES)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
 
 class NicheTemplate(Base):
     """A reusable Retell agent prompt for a niche (e.g. Auto AC Repair), with

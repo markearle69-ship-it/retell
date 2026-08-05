@@ -219,7 +219,7 @@ def test_provision_site_runs_all_steps_and_is_idempotent(db, monkeypatch):
 
     calls = {"agent": 0, "trunk": 0, "import": 0}
 
-    def fake_create_agent(n, t):
+    def fake_create_agent(n, t, shared_rules=""):
         calls["agent"] += 1
         return "llm_123", "agent_123"
 
@@ -264,7 +264,7 @@ def test_provision_site_retries_only_failed_step(db, monkeypatch):
 
     calls = {"agent": 0, "trunk": 0, "import": 0}
 
-    def fake_create_agent(n, t):
+    def fake_create_agent(n, t, shared_rules=""):
         calls["agent"] += 1
         return "llm_1", "agent_1"
 
@@ -294,6 +294,62 @@ def test_provision_site_retries_only_failed_step(db, monkeypatch):
 
     provisioning.provision_site(db, tenant, niche)
 
-    # The already-succeeded agent-creation step is NOT repeated.
     assert calls == {"agent": 1, "trunk": 2, "import": 1}
     assert tenant.provisioned_at is not None
+
+
+def test_get_global_prompt_config_creates_default_row_once(db):
+    from app.models import DEFAULT_GLOBAL_PROMPT_RULES, GlobalPromptConfig
+
+    db.query(GlobalPromptConfig).delete()
+    db.commit()
+
+    config = provisioning.get_global_prompt_config(db)
+    assert config.shared_rules == DEFAULT_GLOBAL_PROMPT_RULES
+
+    config.shared_rules = "Custom rule text."
+    db.commit()
+
+    # Second call returns the same row, not a fresh default.
+    config_again = provisioning.get_global_prompt_config(db)
+    assert config_again.shared_rules == "Custom rule text."
+    assert db.query(GlobalPromptConfig).count() == 1
+
+
+def test_create_retell_agent_prepends_shared_rules(monkeypatch):
+    captured = {}
+
+    class _CapturingClient(_FakeRetellClient):
+        def post(self, url, headers=None, json=None):
+            if url.endswith("/create-retell-llm"):
+                captured["llm_payload"] = json
+                return _FakeResponse(200, "ok", json_data={"llm_id": "llm_captured"})
+            return _FakeResponse(200, "ok", json_data={"agent_id": "agent_captured"})
+
+    monkeypatch.setattr(provisioning.httpx, "Client", _CapturingClient)
+
+    provisioning.create_retell_agent(
+        _NicheStub(), _TenantStub(), shared_rules="Never claim to be human."
+    )
+
+    prompt = captured["llm_payload"]["general_prompt"]
+    assert prompt.startswith("Never claim to be human.")
+    assert "Test Business" in prompt  # niche prompt still present after it
+
+
+def test_create_retell_agent_without_shared_rules_is_unchanged(monkeypatch):
+    captured = {}
+
+    class _CapturingClient(_FakeRetellClient):
+        def post(self, url, headers=None, json=None):
+            if url.endswith("/create-retell-llm"):
+                captured["llm_payload"] = json
+                return _FakeResponse(200, "ok", json_data={"llm_id": "llm_captured"})
+            return _FakeResponse(200, "ok", json_data={"agent_id": "agent_captured"})
+
+    monkeypatch.setattr(provisioning.httpx, "Client", _CapturingClient)
+
+    provisioning.create_retell_agent(_NicheStub(), _TenantStub())
+
+    prompt = captured["llm_payload"]["general_prompt"]
+    assert prompt.startswith("Prompt for Test Business")

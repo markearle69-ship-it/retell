@@ -6,6 +6,25 @@
 </div>
 
 <div class="card">
+  <h2>Global prompt rules</h2>
+  <p class="muted">
+    Automatically prepended to every niche's prompt at provisioning time &mdash; the place for
+    behavior that should apply everywhere (e.g. never claiming to be human, how to handle spam
+    calls), so it's maintained once instead of copy-pasted into each niche below. Only applies to
+    sites provisioned <strong>after</strong> a change here; already-provisioned sites need editing
+    directly in Retell or a Force re-provision.
+  </p>
+  <form method="post" action="/admin/niches/global-rules">
+    <textarea name="shared_rules" rows="6"
+              style="width:100%; box-sizing:border-box; font-family: ui-monospace, monospace; font-size: 0.85rem;"
+    >{{ global_config.shared_rules }}</textarea>
+    <div style="margin-top: 0.5rem;">
+      <button type="submit">Save global rules</button>
+    </div>
+  </form>
+</div>
+
+<div class="card">
   <h2>{% if edit_niche %}Edit "{{ edit_niche.name }}"{% else %}Add a niche template{% endif %}</h2>
   <p class="muted">
     Write the prompt once per niche. Per-site placeholders:

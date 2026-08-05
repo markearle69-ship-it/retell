@@ -221,9 +221,20 @@ def list_niches(request: Request, edit_id: Optional[int] = None, db: Session = D
     edit_niche = None
     if edit_id is not None:
         edit_niche = db.query(models.NicheTemplate).filter(models.NicheTemplate.id == edit_id).first()
+    global_config = provisioning.get_global_prompt_config(db)
     return templates.TemplateResponse(
-        request, "niches.html", {"niches": niches, "edit_niche": edit_niche}
+        request,
+        "niches.html",
+        {"niches": niches, "edit_niche": edit_niche, "global_config": global_config},
     )
+
+
+@router.post("/niches/global-rules", dependencies=[Depends(require_admin_session)])
+def update_global_prompt_rules(shared_rules: str = Form(...), db: Session = Depends(get_db)):
+    config = provisioning.get_global_prompt_config(db)
+    config.shared_rules = shared_rules.strip()
+    db.commit()
+    return RedirectResponse(url="/admin/niches", status_code=303)
 
 
 @router.post("/niches", dependencies=[Depends(require_admin_session)])
