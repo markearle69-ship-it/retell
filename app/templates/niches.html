@@ -11,8 +11,8 @@
     Automatically prepended to every niche's prompt at provisioning time &mdash; the place for
     behavior that should apply everywhere (e.g. never claiming to be human, how to handle spam
     calls), so it's maintained once instead of copy-pasted into each niche below. Only applies to
-    sites provisioned <strong>after</strong> a change here; already-provisioned sites need editing
-    directly in Retell or a Force re-provision.
+    sites provisioned <strong>after</strong> a change here &mdash; use "Sync existing agents" below
+    to bring already-provisioned sites up to date without recreating anything.
   </p>
   <form method="post" action="/admin/niches/global-rules">
     <textarea name="shared_rules" rows="6"
@@ -21,6 +21,20 @@
     <div style="margin-top: 0.5rem;">
       <button type="submit">Save global rules</button>
     </div>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Sync existing agents</h2>
+  <p class="muted">
+    Patches every already-provisioned site's existing LLM to add the end_call tool and/or the
+    current global rules above, if either is missing, then publishes it. Safe to run any time
+    &mdash; sites already up to date are skipped, and no new agent/LLM is created and no phone
+    routing is touched (unlike Force re-provision on a site's edit form).
+  </p>
+  <form method="post" action="/admin/sync-existing-agents"
+        onsubmit="return confirm('Patch and publish every already-provisioned site\'s live agent? This takes effect immediately on live calls.');">
+    <button type="submit">Sync all existing agents</button>
   </form>
 </div>
 

@@ -353,3 +353,95 @@ def test_create_retell_agent_without_shared_rules_is_unchanged(monkeypatch):
 
     prompt = captured["llm_payload"]["general_prompt"]
     assert prompt.startswith("Prompt for Test Business")
+
+
+class _TenantWithIdsStub:
+    def __init__(self, retell_llm_id="llm_existing", retell_agent_id="agent_existing"):
+        self.retell_llm_id = retell_llm_id
+        self.retell_agent_id = retell_agent_id
+
+
+def test_sync_existing_agent_skips_non_provisioned_site():
+    tenant = _TenantWithIdsStub(retell_llm_id=None, retell_agent_id=None)
+    assert provisioning.sync_existing_agent(tenant, "Some rule.") == "skipped (not auto-provisioned)"
+
+
+def test_sync_existing_agent_already_up_to_date(monkeypatch):
+    class _Client(_FakeRetellClient):
+        def get(self, url, headers=None):
+            return _FakeResponse(
+                200,
+                "ok",
+                json_data={
+                    "general_prompt": "Some rule.\n\nNiche prompt here.",
+                    "general_tools": [provisioning.END_CALL_TOOL],
+                },
+            )
+
+    calls = {"patch": 0, "post": 0}
+    client = _Client()
+    monkeypatch.setattr(
+        client,
+        "patch",
+        lambda *a, **kw: calls.__setitem__("patch", calls["patch"] + 1),
+        raising=False,
+    )
+    monkeypatch.setattr(provisioning.httpx, "Client", lambda *a, **kw: client)
+
+    status = provisioning.sync_existing_agent(_TenantWithIdsStub(), "Some rule.")
+
+    assert status == "already up to date"
+    assert calls["patch"] == 0
+
+
+def test_sync_existing_agent_patches_and_publishes_when_missing(monkeypatch):
+    captured = {}
+
+    class _Client(_FakeRetellClient):
+        def get(self, url, headers=None):
+            return _FakeResponse(
+                200, "ok", json_data={"general_prompt": "Niche prompt here.", "general_tools": []}
+            )
+
+        def patch(self, url, headers=None, json=None):
+            captured["patch_url"] = url
+            captured["patch_payload"] = json
+            return _FakeResponse(200, "ok")
+
+        def post(self, url, headers=None, json=None):
+            captured["publish_url"] = url
+            return _FakeResponse(200, "ok")
+
+    monkeypatch.setattr(provisioning.httpx, "Client", _Client)
+
+    status = provisioning.sync_existing_agent(
+        _TenantWithIdsStub(retell_llm_id="llm_x", retell_agent_id="agent_x"), "Some rule."
+    )
+
+    assert status == "updated"
+    assert captured["patch_url"] == f"{provisioning.RETELL_API_BASE}/update-retell-llm/llm_x"
+    assert captured["patch_payload"]["general_prompt"].startswith("Some rule.")
+    assert "Niche prompt here." in captured["patch_payload"]["general_prompt"]
+    assert provisioning.END_CALL_TOOL in captured["patch_payload"]["general_tools"]
+    assert captured["publish_url"] == f"{provisioning.RETELL_API_BASE}/publish-agent/agent_x"
+
+
+def test_sync_existing_agent_reports_publish_failure_distinctly(monkeypatch):
+    class _Client(_FakeRetellClient):
+        def get(self, url, headers=None):
+            return _FakeResponse(
+                200, "ok", json_data={"general_prompt": "Niche prompt here.", "general_tools": []}
+            )
+
+        def patch(self, url, headers=None, json=None):
+            return _FakeResponse(200, "ok")
+
+        def post(self, url, headers=None, json=None):
+            return _FakeResponse(500, "server error")
+
+    monkeypatch.setattr(provisioning.httpx, "Client", _Client)
+
+    with pytest.raises(provisioning.ProvisioningError) as exc_info:
+        provisioning.sync_existing_agent(_TenantWithIdsStub(), "Some rule.")
+
+    assert "saved as a draft, not live yet" in str(exc_info.value)

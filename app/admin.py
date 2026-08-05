@@ -237,6 +237,32 @@ def update_global_prompt_rules(shared_rules: str = Form(...), db: Session = Depe
     return RedirectResponse(url="/admin/niches", status_code=303)
 
 
+@router.post(
+    "/sync-existing-agents", response_class=HTMLResponse, dependencies=[Depends(require_admin_session)]
+)
+def sync_existing_agents(request: Request, db: Session = Depends(get_db)):
+    """Patch every already-provisioned site's existing LLM (add end_call /
+    current global rules if missing) and publish it - without creating any
+    new agent/LLM or touching phone routing, unlike Force re-provision."""
+    shared_rules = provisioning.get_global_prompt_config(db).shared_rules
+    tenants = (
+        db.query(models.Tenant)
+        .filter(models.Tenant.retell_llm_id.isnot(None))
+        .order_by(models.Tenant.business_name)
+        .all()
+    )
+
+    results = []
+    for tenant in tenants:
+        try:
+            status = provisioning.sync_existing_agent(tenant, shared_rules)
+        except ProvisioningError as exc:
+            status = f"error: {exc}"
+        results.append({"business_name": tenant.business_name, "status": status})
+
+    return templates.TemplateResponse(request, "sync_results.html", {"results": results})
+
+
 @router.post("/niches", dependencies=[Depends(require_admin_session)])
 def upsert_niche(
     niche_id: Optional[int] = Form(None),

@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block body %}
+<div class="topbar">
+  <h1>Sync existing agents</h1>
+  <a href="/admin/niches">&larr; Back to niches</a>
+</div>
+
+<div class="card">
+  <p class="muted">
+    Patched each already-provisioned site's existing LLM in place (adding the end_call tool
+    and/or the current global rules if either was missing) and published it. No new agent/LLM
+    was created and phone routing wasn't touched.
+  </p>
+  <table>
+    <thead><tr><th>Site</th><th>Result</th></tr></thead>
+    <tbody>
+    {% for r in results %}
+      <tr>
+        <td>{{ r.business_name }}</td>
+        <td>
+          {% if r.status == "updated" %}
+            <span style="color: #16a34a;">Updated &amp; published</span>
+          {% elif r.status == "already up to date" %}
+            <span class="muted">Already up to date</span>
+          {% elif r.status.startswith("error:") %}
+            <span style="color:#dc2626;">{{ r.status }}</span>
+          {% else %}
+            <span class="muted">{{ r.status }}</span>
+          {% endif %}
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="2" class="muted">No auto-provisioned sites to sync.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

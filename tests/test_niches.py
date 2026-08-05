@@ -237,3 +237,47 @@ def test_niches_page_shows_and_updates_global_prompt_rules():
     resp = client.get("/admin/niches")
     assert "Always say you are an AI assistant if asked." in resp.text
     assert DEFAULT_GLOBAL_PROMPT_RULES not in resp.text
+
+
+def test_sync_existing_agents_bulk_action(monkeypatch):
+    client = _logged_in_client()
+
+    # One auto-provisioned site (has retell_llm_id) and one manual site (doesn't).
+    client.post(
+        "/admin/tenants",
+        data={"business_name": "Provisioned Site", "to_number": "+15556660001"},
+        follow_redirects=False,
+    )
+    client.post(
+        "/admin/tenants",
+        data={"business_name": "Manual Site", "to_number": "+15556660002"},
+        follow_redirects=False,
+    )
+
+    from app.db import SessionLocal
+    from app.models import Tenant
+
+    db = SessionLocal()
+    provisioned = db.query(Tenant).filter(Tenant.to_number == "+15556660001").first()
+    provisioned.retell_llm_id = "llm_bulk_test"
+    provisioned.retell_agent_id = "agent_bulk_test"
+    db.commit()
+    db.close()
+
+    seen_business_names = []
+
+    def fake_sync(tenant, shared_rules):
+        seen_business_names.append(tenant.business_name)
+        return "updated" if tenant.business_name == "Provisioned Site" else "already up to date"
+
+    monkeypatch.setattr(admin.provisioning, "sync_existing_agent", fake_sync)
+
+    resp = client.post("/admin/sync-existing-agents")
+    assert resp.status_code == 200
+    assert "Provisioned Site" in resp.text
+    assert "Updated" in resp.text
+    # The DB is shared across tests in this session, so other tenants with a
+    # retell_llm_id set may legitimately also appear - just confirm the
+    # manual (never-provisioned) site from this test wasn't included.
+    assert "Provisioned Site" in seen_business_names
+    assert "Manual Site" not in seen_business_names

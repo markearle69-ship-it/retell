@@ -29,6 +29,23 @@ RETELL_API_BASE = "https://api.retellai.com"
 
 _VAR_RE = re.compile(r"\{\{\s*(\w+)\s*\}\}")
 
+# Without this, a prompt instructing the agent to "invoke end_call" (e.g. for
+# hanging up on robocalls/spam) has no actual tool to call - it's not
+# available by default and has to be registered explicitly. Shared between
+# create_retell_agent (new sites) and sync_existing_agent (patching sites
+# that predate this) so both stay identical.
+END_CALL_TOOL = {
+    "type": "end_call",
+    "name": "end_call",
+    "description": (
+        "End the call immediately. Use this both at the natural close of a normal "
+        "call (after saying goodbye), and the instant you detect the caller is a "
+        "robocall, scam, or automated spam system rather than a real customer - in "
+        "the spam case, call this tool right away with no spoken reply at all."
+    ),
+    "speak_during_execution": False,
+}
+
 
 class ProvisioningError(Exception):
     """Raised when a step fails; the message is shown directly in the admin panel."""
@@ -117,22 +134,7 @@ def create_retell_agent(niche: "NicheTemplate", tenant: "Tenant", shared_rules: 
         "general_prompt": general_prompt,
         "model": niche.model or "gpt-4.1",
         "start_speaker": "agent",
-        # Without this, a prompt instructing the agent to "invoke end_call" (e.g.
-        # for hanging up on robocalls/spam) has no actual tool to call - it's not
-        # available by default and has to be registered explicitly.
-        "general_tools": [
-            {
-                "type": "end_call",
-                "name": "end_call",
-                "description": (
-                    "End the call immediately. Use this both at the natural close of a normal "
-                    "call (after saying goodbye), and the instant you detect the caller is a "
-                    "robocall, scam, or automated spam system rather than a real customer - in "
-                    "the spam case, call this tool right away with no spoken reply at all."
-                ),
-                "speak_during_execution": False,
-            }
-        ],
+        "general_tools": [END_CALL_TOOL],
     }
     if niche.begin_message_template:
         llm_payload["begin_message"] = render_template(niche.begin_message_template, variables)
@@ -180,6 +182,77 @@ def create_retell_agent(niche: "NicheTemplate", tenant: "Tenant", shared_rules: 
         agent_id = resp.json()["agent_id"]
 
     return llm_id, agent_id
+
+
+def sync_existing_agent(tenant: "Tenant", shared_rules: str) -> str:
+    """Patch an already-provisioned site's existing LLM in place - add the
+    end_call tool and the current global rules if either is missing - then
+    publish the agent so the change actually goes live. No new agent/LLM is
+    created and no phone routing is touched, unlike Force re-provision.
+
+    Returns a short human-readable status: "updated", "already up to date",
+    or "skipped (not auto-provisioned)".
+    """
+    if not tenant.retell_llm_id or not tenant.retell_agent_id:
+        return "skipped (not auto-provisioned)"
+
+    with httpx.Client(timeout=30) as client:
+        try:
+            resp = client.get(
+                f"{RETELL_API_BASE}/get-retell-llm/{tenant.retell_llm_id}", headers=_retell_headers()
+            )
+            resp.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            raise ProvisioningError(
+                f"Failed to fetch LLM {tenant.retell_llm_id}: {exc.response.status_code} {exc.response.text}"
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise ProvisioningError(f"Failed to fetch LLM {tenant.retell_llm_id}: {exc}") from exc
+        current = resp.json()
+
+        current_prompt = current.get("general_prompt") or ""
+        current_tools = current.get("general_tools") or []
+
+        needs_rules = bool(shared_rules.strip()) and not current_prompt.strip().startswith(shared_rules.strip())
+        needs_end_call = not any(t.get("type") == "end_call" for t in current_tools)
+
+        if not needs_rules and not needs_end_call:
+            return "already up to date"
+
+        new_prompt = f"{shared_rules.strip()}\n\n{current_prompt}" if needs_rules else current_prompt
+        new_tools = current_tools + [END_CALL_TOOL] if needs_end_call else current_tools
+
+        try:
+            resp = client.patch(
+                f"{RETELL_API_BASE}/update-retell-llm/{tenant.retell_llm_id}",
+                headers=_retell_headers(),
+                json={"general_prompt": new_prompt, "general_tools": new_tools},
+            )
+            resp.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            raise ProvisioningError(
+                f"Failed to update LLM {tenant.retell_llm_id}: {exc.response.status_code} {exc.response.text}"
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise ProvisioningError(f"Failed to update LLM {tenant.retell_llm_id}: {exc}") from exc
+
+        try:
+            resp = client.post(
+                f"{RETELL_API_BASE}/publish-agent/{tenant.retell_agent_id}", headers=_retell_headers()
+            )
+            resp.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            raise ProvisioningError(
+                f"LLM updated but publishing agent {tenant.retell_agent_id} failed - the change "
+                f"was saved as a draft, not live yet: {exc.response.status_code} {exc.response.text}"
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise ProvisioningError(
+                f"LLM updated but publishing agent {tenant.retell_agent_id} failed - the change "
+                f"was saved as a draft, not live yet: {exc}"
+            ) from exc
+
+    return "updated"
 
 
 def _twilio_client() -> TwilioClient:
