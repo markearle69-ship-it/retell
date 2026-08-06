@@ -111,12 +111,13 @@
         <td>{{ n.voice_id }}</td>
         <td>{{ n.model }}</td>
         <td>
-          <a href="/admin/niches?edit_id={{ n.id }}">Edit</a>
-          &nbsp;
-          <form class="inline" method="post" action="/admin/niches/{{ n.id }}/delete"
-                onsubmit="return confirm('Remove niche {{ n.name }}? Sites using it keep their existing agent.');">
-            <button class="danger" type="submit">Delete</button>
-          </form>
+          <div class="row-actions">
+            <a href="/admin/niches?edit_id={{ n.id }}">Edit</a>
+            <form class="inline" method="post" action="/admin/niches/{{ n.id }}/delete"
+                  onsubmit="return confirm('Remove niche {{ n.name }}? Sites using it keep their existing agent.');">
+              <button class="link danger" type="submit">Delete</button>
+            </form>
+          </div>
         </td>
       </tr>
     {% else %}
