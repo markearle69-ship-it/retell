@@ -18,6 +18,12 @@ class Settings(BaseSettings):
     # Admin API access (protects /tenants and /leads)
     admin_api_key: str = "change-me"
 
+    # Self-hosted visitor analytics (see app/analytics.py). Keyed separately
+    # from admin_api_key: this secret keys the daily-rotating pseudonymous
+    # visitor hash, a different purpose from admin auth, so rotating one
+    # never silently breaks the other.
+    analytics_salt: str = "change-me-analytics-salt"
+
     # Email notifications. Preferred: Postmark's API (postmark_api_token set) -
     # only needs smtp_from for the sender address, everything else is ignored.
     # Falls back to generic SMTP if postmark_api_token is blank, for any other

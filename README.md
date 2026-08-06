@@ -38,6 +38,11 @@ change — you're just adding a webhook destination in Retell.
   attaches your already-purchased Twilio number to your shared SIP trunk,
   and imports the number into Retell pointed at the new agent — the only
   manual step left is buying the number in Twilio.
+- Also includes a **self-hosted, cookie-free visitor analytics platform**
+  (`/admin/analytics`) for the same sites — page views, unique visitors, and
+  the search query / referrer / UTM campaign that brought them, without
+  using Google Analytics or Search Console on any of your sites. See
+  [Visitor analytics](#visitor-analytics-self-hosted-no-google) below.
 
 ## Setup
 
@@ -175,6 +180,59 @@ change — you're just adding a webhook destination in Retell.
    the same form only retries what's left. A niche is just a starting point:
    after provisioning, tweak the agent/prompt further in Retell's dashboard
    as needed — the panel doesn't try to keep them in sync afterward.
+
+## Visitor analytics (self-hosted, no Google)
+
+A separate, self-hosted page-view analytics platform for the same portfolio of
+microsites — deliberately **not** Google Analytics / Search Console, so there's
+no shared script, cookie, or account tying your sites together. Each site
+loads a small snippet from this service and posts a beacon back to it; nothing
+talks to Google.
+
+1. **Add a site**: `/admin/analytics` → "Add a site" (name + domain). This
+   generates a `site_key` and gives you a snippet:
+
+   ```html
+   <script defer data-site="SITE_KEY" src="https://<your-domain>/t.js"></script>
+   ```
+
+   Paste it once, near the end of `<body>`, on that microsite. The same
+   `/t.js` file is served for every site — it reads its own key off the
+   `data-site` attribute — so there's nothing per-site to host yourself.
+
+2. **What you get per site** (`/admin/analytics/sites/{id}`): view counts and
+   unique-visitor counts for 24h/7d/30d plus a daily table, top pages, top
+   non-search referrers, and — the "what query got them here" part — search
+   engine + search query, and UTM source/campaign/term for anything you've
+   tagged.
+
+3. **The honest limit on search queries**: Google has stripped the search
+   term from its outbound referrer for organic results since 2013 (this is
+   the origin of "(not provided)" in GA too) — no self-hosted tool can get
+   around that, it's stripped before it ever leaves Google. Bing, DuckDuckGo,
+   Yahoo, Yandex, and Baidu still pass the term through, and those show up
+   directly under "Search queries". If these sites run paid traffic, set
+   `utm_term={keyword}` (Google Ads ValueTrack — or Bing Ads' equivalent) on
+   the destination URL and you get exact keyword-level attribution
+   reliably, including from Google Ads.
+
+4. **Privacy / what's stored**: no cookies, no localStorage, no third-party
+   requests. No raw IP address or full user-agent string is ever written to
+   the database — `/collect` only persists a one-way HMAC of
+   `(ip, user-agent, site key, calendar day)`, keyed by `ANALYTICS_SALT`, so
+   the same visitor hashes differently every day and the hash can't be
+   reversed back to an IP. Only coarse device type (mobile/tablet/desktop)
+   and browser family are stored, not the raw UA string. This reduces (but
+   doesn't eliminate) compliance work compared to GA — you're still running
+   analytics on real visitors, so check what a cookieless-analytics
+   exemption looks like under GDPR/ePrivacy (and CCPA if relevant) in the
+   jurisdictions your visitors are in; this isn't legal advice.
+   Common crawlers/bots are flagged (`is_bot`) and excluded from the visitor
+   counts, though a determined bot can still spoof a normal user-agent.
+
+5. **Regenerating a key** (`Regenerate key` on a site's detail page)
+   invalidates the old snippet immediately — update the `<script>` tag on the
+   site afterward or it'll silently stop recording.
 
 ## Running tests
 

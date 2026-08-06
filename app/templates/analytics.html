@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}Visitor analytics{% endblock %}
+{% block body %}
+<div class="topbar">
+  <h1>Visitor analytics</h1>
+  <a href="/admin">&larr; Back to sites</a>
+</div>
+
+<div class="card">
+  <h2>How this works</h2>
+  <p class="muted">
+    Self-hosted, cookie-free page-view tracking &mdash; no Google Analytics, no Search Console, no
+    shared script or account across your sites. Add a site below, then paste its snippet just
+    before <code>&lt;/body&gt;</code> on that microsite. No cookies or localStorage are used, and no
+    raw IP address or full user-agent string is ever stored &mdash; see the README for details.
+  </p>
+  <p class="muted">
+    On search queries: Google strips the search term from its referrer for organic results (this
+    is why every analytics tool shows "(not provided)" for Google organic) &mdash; that's a Google
+    limitation, not something this tool can work around. Bing, DuckDuckGo, Yahoo, Yandex and Baidu
+    still pass the term through and are captured below. For guaranteed keyword-level data
+    (including from Google), set <code>utm_term=&#123;keyword&#125;</code> as a Google Ads
+    ValueTrack parameter (or the Bing Ads equivalent) on your ad destination URLs.
+  </p>
+</div>
+
+{% if error %}
+<div class="card" style="border: 1px solid #dc2626;">
+  <h2 style="color:#dc2626;">Couldn't add site</h2>
+  <p>{{ error }}</p>
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>Add a site</h2>
+  <form method="post" action="/admin/analytics/sites" class="form-grid">
+    <div>
+      <label>Site name</label>
+      <input name="name" required placeholder="AC Repair - Socorro TX" />
+    </div>
+    <div>
+      <label>Domain</label>
+      <input name="domain" required placeholder="acrepairsocorro.com" />
+    </div>
+    <div>
+      <button type="submit">Add site</button>
+    </div>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Sites ({{ summaries|length }})</h2>
+  <table>
+    <thead>
+      <tr><th>Site</th><th>Views (24h)</th><th>Visitors (24h)</th><th>Views (7d)</th><th>Views (30d)</th><th></th></tr>
+    </thead>
+    <tbody>
+    {% for row in summaries %}
+      <tr>
+        <td><a href="/admin/analytics/sites/{{ row.site.id }}">{{ row.site.name }}</a><br /><span class="muted">{{ row.site.domain }}</span></td>
+        <td>{{ row.stats.views_24h }}</td>
+        <td>{{ row.stats.visitors_24h }}</td>
+        <td>{{ row.stats.views_7d }}</td>
+        <td>{{ row.stats.views_30d }}</td>
+        <td>
+          <div class="row-actions">
+            <a href="/admin/analytics/sites/{{ row.site.id }}">Details</a>
+            <form class="inline" method="post" action="/admin/analytics/sites/{{ row.site.id }}/delete"
+                  onsubmit="return confirm('Stop tracking {{ row.site.name }}? This deletes all recorded page views.');">
+              <button class="link danger" type="submit">Delete</button>
+            </form>
+          </div>
+        </td>
+      </tr>
+      <tr>
+        <td colspan="6" style="padding-top:0;">
+          <code class="url">{{ row.snippet }}</code>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="muted">No sites tracked yet &mdash; add one above.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
