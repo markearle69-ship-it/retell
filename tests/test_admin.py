@@ -1,7 +1,12 @@
+import time
+from datetime import datetime, timedelta
+
 from fastapi.testclient import TestClient
 
 from app.config import settings
+from app.db import SessionLocal
 from app.main import app
+from app.models import Lead
 
 
 def test_dashboard_requires_login():
@@ -119,3 +124,33 @@ def test_add_site_with_manual_niche_select_does_not_500():
 
     resp = client.get("/admin")
     assert "Manual Select Site" in resp.text
+
+
+def test_lead_volume_stat_tiles():
+    now = datetime.utcnow()
+    unique = int(time.time() * 1000)
+    db = SessionLocal()
+    db.add(Lead(call_id=f"vol_within_24h_{unique}", created_at=now - timedelta(hours=1)))
+    db.add(Lead(call_id=f"vol_within_7d_{unique}", created_at=now - timedelta(days=2)))
+    db.add(Lead(call_id=f"vol_within_30d_{unique}", created_at=now - timedelta(days=20)))
+    db.add(Lead(call_id=f"vol_too_old_{unique}", created_at=now - timedelta(days=40)))
+    db.commit()
+
+    before = {
+        "last_24h": SessionLocal().query(Lead).filter(Lead.created_at >= now - timedelta(hours=24)).count(),
+        "last_7d": SessionLocal().query(Lead).filter(Lead.created_at >= now - timedelta(days=7)).count(),
+        "last_30d": SessionLocal().query(Lead).filter(Lead.created_at >= now - timedelta(days=30)).count(),
+    }
+    db.close()
+
+    client = TestClient(app)
+    client.post("/admin/login", data={"password": settings.admin_api_key}, follow_redirects=False)
+    resp = client.get("/admin")
+    assert resp.status_code == 200
+
+    # These three counts include whatever other tests already inserted in the
+    # shared DB, so assert against a freshly computed expectation rather than
+    # small fixed numbers.
+    assert f'<div class="stat-value">{before["last_24h"]}</div>' in resp.text
+    assert f'<div class="stat-value">{before["last_7d"]}</div>' in resp.text
+    assert f'<div class="stat-value">{before["last_30d"]}</div>' in resp.text

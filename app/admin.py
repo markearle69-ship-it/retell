@@ -1,4 +1,5 @@
 import os
+from datetime import datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -94,6 +95,13 @@ def _dashboard_context(request: Request, db: Session, edit_id: Optional[int], pr
 
     recent_leads = db.query(models.Lead).order_by(models.Lead.created_at.desc()).limit(25).all()
 
+    now = datetime.utcnow()
+    lead_volume = {
+        "last_24h": db.query(models.Lead).filter(models.Lead.created_at >= now - timedelta(hours=24)).count(),
+        "last_7d": db.query(models.Lead).filter(models.Lead.created_at >= now - timedelta(days=7)).count(),
+        "last_30d": db.query(models.Lead).filter(models.Lead.created_at >= now - timedelta(days=30)).count(),
+    }
+
     edit_tenant = None
     if edit_id is not None:
         edit_tenant = db.query(models.Tenant).filter(models.Tenant.id == edit_id).first()
@@ -104,6 +112,7 @@ def _dashboard_context(request: Request, db: Session, edit_id: Optional[int], pr
         "tenants": tenants,
         "lead_counts": lead_counts,
         "recent_leads": recent_leads,
+        "lead_volume": lead_volume,
         "edit_tenant": edit_tenant,
         "niches": niches,
         "webhook_url": _public_webhook_url(request),

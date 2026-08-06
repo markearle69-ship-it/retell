@@ -33,6 +33,10 @@
   }
   .row-actions button.link.danger { color: #dc2626; }
   @media (prefers-color-scheme: dark) { .row-actions button.link { color: #6ea8fe; } }
+  .stat-row { display: flex; gap: 2rem; flex-wrap: wrap; }
+  .stat-tile .stat-label { font-size: 0.8rem; color: #666; margin-bottom: 0.15rem; }
+  .stat-tile .stat-value { font-size: 1.8rem; font-weight: 600; font-variant-numeric: proportional-nums; }
+  @media (prefers-color-scheme: dark) { .stat-tile .stat-label { color: #999; } }
   code.url { display: block; padding: 0.6rem 0.8rem; background: #f0f0f2; border-radius: 6px; font-size: 0.85rem; overflow-x: auto; }
   @media (prefers-color-scheme: dark) { code.url { background: #12151a; } }
   a { color: #2563eb; }

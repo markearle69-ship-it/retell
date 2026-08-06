@@ -135,6 +135,24 @@
 </div>
 
 <div class="card">
+  <h2>Lead volume</h2>
+  <div class="stat-row">
+    <div class="stat-tile">
+      <div class="stat-label">Last 24 hours</div>
+      <div class="stat-value">{{ lead_volume.last_24h }}</div>
+    </div>
+    <div class="stat-tile">
+      <div class="stat-label">Last 7 days</div>
+      <div class="stat-value">{{ lead_volume.last_7d }}</div>
+    </div>
+    <div class="stat-tile">
+      <div class="stat-label">Last 30 days</div>
+      <div class="stat-value">{{ lead_volume.last_30d }}</div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
   <h2>Recent leads</h2>
   <table>
     <thead><tr><th>When</th><th>Site</th><th>Caller</th><th>Sentiment</th><th>Summary</th></tr></thead>
