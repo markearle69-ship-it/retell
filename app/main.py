@@ -1,12 +1,14 @@
+import json
 import logging
 from datetime import datetime
 from typing import Optional
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
-from fastapi.responses import RedirectResponse
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse, Response
 from sqlalchemy.orm import Session
 
-from . import admin, models, notify, schemas
+from . import admin, analytics, models, notify, schemas
 from .admin import NotAuthenticated
 from .config import settings
 from .db import Base, engine, get_db
@@ -22,6 +24,52 @@ run_additive_migrations(engine)
 app = FastAPI(title="Retell Lead Router")
 app.include_router(admin.router)
 
+# /collect and /t.js are hit cross-origin from every tracked microsite's own
+# domain, unauthenticated (site_key is a public identifier, not a secret -
+# see AnalyticsSite in app/models.py), so this needs to allow any origin.
+# No credentials/cookies are involved on these calls, so allow_origins="*"
+# doesn't expose the admin session cookie to anyone.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["*"],
+)
+
+
+_TRACKER_JS = """
+(function () {
+  var script = document.currentScript;
+  if (!script) return;
+  var site = script.getAttribute("data-site");
+  if (!site) return;
+  var endpoint = script.src.replace(/\\/t\\.js.*$/, "/collect");
+
+  function send() {
+    var payload = JSON.stringify({
+      site_key: site,
+      url: location.href,
+      referrer: document.referrer || null
+    });
+    try {
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon(endpoint, new Blob([payload], { type: "text/plain" }));
+        return;
+      }
+    } catch (e) {}
+    fetch(endpoint, {
+      method: "POST",
+      body: payload,
+      headers: { "Content-Type": "text/plain" },
+      keepalive: true
+    }).catch(function () {});
+  }
+
+  send();
+})();
+""".strip()
+
 
 @app.exception_handler(NotAuthenticated)
 async def not_authenticated_handler(request: Request, exc: NotAuthenticated) -> RedirectResponse:
@@ -36,6 +84,72 @@ def require_admin(x_admin_key: str = Header(default="")) -> None:
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok"}
+
+
+@app.get("/t.js")
+def tracker_script() -> Response:
+    """The self-hosted analytics snippet. Embed once per microsite:
+
+    <script defer data-site="SITE_KEY" src="https://<this-service>/t.js"></script>
+
+    Same file for every site - it reads its own site key from the data-site
+    attribute on its own <script> tag, Plausible-style. No cookies, no
+    localStorage, no third-party requests."""
+    return Response(content=_TRACKER_JS, media_type="application/javascript")
+
+
+@app.post("/collect")
+async def collect(request: Request, db: Session = Depends(get_db)) -> Response:
+    """Records one page-view beacon. Always responds 204 regardless of
+    whether site_key is recognized, so this can't be used to enumerate
+    valid site keys by watching the response."""
+    try:
+        raw = await request.body()
+        payload = json.loads(raw) if raw else {}
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        payload = {}
+
+    site_key = (payload.get("site_key") or "").strip()
+    if not site_key:
+        return Response(status_code=204)
+
+    site = (
+        db.query(models.AnalyticsSite)
+        .filter(models.AnalyticsSite.site_key == site_key)
+        .first()
+    )
+    if site is None:
+        return Response(status_code=204)
+
+    user_agent = request.headers.get("user-agent", "")
+    ip = analytics.client_ip(request)
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+
+    landing_url = payload.get("url") or ""
+    path = analytics.path_from_url(landing_url)
+    referrer_info = analytics.parse_referrer(payload.get("referrer"), own_host=site.domain)
+    utm_info = analytics.parse_landing_url(landing_url)
+
+    view = models.PageView(
+        site_id=site.id,
+        path=path,
+        referrer_host=referrer_info["referrer_host"],
+        search_engine=referrer_info["search_engine"],
+        search_query=referrer_info["search_query"],
+        utm_source=utm_info["utm_source"],
+        utm_medium=utm_info["utm_medium"],
+        utm_campaign=utm_info["utm_campaign"],
+        utm_term=utm_info["utm_term"],
+        utm_content=utm_info["utm_content"],
+        visitor_hash=analytics.visitor_hash(ip, user_agent, site_key, today),
+        device_type=analytics.device_type(user_agent),
+        browser=analytics.browser_name(user_agent),
+        is_bot=analytics.is_bot_ua(user_agent),
+    )
+    db.add(view)
+    db.commit()
+
+    return Response(status_code=204)
 
 
 @app.post("/webhooks/retell")

@@ -8,7 +8,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from . import models, provisioning
+from . import analytics, models, provisioning
 from .config import settings
 from .db import get_db
 from .provisioning import ProvisioningError, provision_site
@@ -43,6 +43,16 @@ def _public_webhook_url(request: Request) -> str:
     base = request.base_url
     scheme = "https" if base.hostname not in ("localhost", "127.0.0.1") else base.scheme
     return f"{scheme}://{base.netloc}/webhooks/retell"
+
+
+def _public_base_url(request: Request) -> str:
+    """Same scheme-guessing logic as _public_webhook_url, without the
+    /webhooks/retell suffix - used to build the /t.js snippet URL."""
+    if settings.public_base_url:
+        return settings.public_base_url.rstrip("/")
+    base = request.base_url
+    scheme = "https" if base.hostname not in ("localhost", "127.0.0.1") else base.scheme
+    return f"{scheme}://{base.netloc}"
 
 
 def require_admin_session(request: Request) -> None:
@@ -340,3 +350,97 @@ def delete_niche(niche_id: int, db: Session = Depends(get_db)):
         db.delete(niche)
         db.commit()
     return RedirectResponse(url="/admin/niches", status_code=303)
+
+
+# --- Self-hosted visitor analytics (app/analytics.py) --------------------
+
+
+def _snippet(request: Request, site: models.AnalyticsSite) -> str:
+    base = _public_base_url(request)
+    return f'<script defer data-site="{site.site_key}" src="{base}/t.js"></script>'
+
+
+@router.get("/analytics", response_class=HTMLResponse, dependencies=[Depends(require_admin_session)])
+def analytics_list(request: Request, db: Session = Depends(get_db)):
+    sites = db.query(models.AnalyticsSite).order_by(models.AnalyticsSite.name).all()
+    now = datetime.utcnow()
+    summaries = []
+    for site in sites:
+        stats = analytics.site_stats(db, site, now)
+        summaries.append({"site": site, "stats": stats, "snippet": _snippet(request, site)})
+    return templates.TemplateResponse(
+        request, "analytics.html", {"summaries": summaries, "error": None}
+    )
+
+
+@router.post("/analytics/sites", dependencies=[Depends(require_admin_session)])
+def create_analytics_site(
+    request: Request,
+    name: str = Form(...),
+    domain: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    domain = domain.strip().lower()
+    domain = domain.removeprefix("https://").removeprefix("http://").rstrip("/")
+
+    existing = db.query(models.AnalyticsSite).filter(models.AnalyticsSite.domain == domain).first()
+    if existing:
+        sites = db.query(models.AnalyticsSite).order_by(models.AnalyticsSite.name).all()
+        now = datetime.utcnow()
+        summaries = [
+            {"site": s, "stats": analytics.site_stats(db, s, now), "snippet": _snippet(request, s)}
+            for s in sites
+        ]
+        return templates.TemplateResponse(
+            request,
+            "analytics.html",
+            {"summaries": summaries, "error": f"{domain} is already tracked."},
+            status_code=400,
+        )
+
+    site = models.AnalyticsSite(
+        name=name.strip(),
+        domain=domain,
+        site_key=analytics.generate_site_key(),
+    )
+    db.add(site)
+    db.commit()
+    return RedirectResponse(url="/admin/analytics", status_code=303)
+
+
+@router.post("/analytics/sites/{site_id}/delete", dependencies=[Depends(require_admin_session)])
+def delete_analytics_site(site_id: int, db: Session = Depends(get_db)):
+    site = db.query(models.AnalyticsSite).filter(models.AnalyticsSite.id == site_id).first()
+    if site is not None:
+        db.delete(site)  # cascades to its page_views
+        db.commit()
+    return RedirectResponse(url="/admin/analytics", status_code=303)
+
+
+@router.post("/analytics/sites/{site_id}/regenerate-key", dependencies=[Depends(require_admin_session)])
+def regenerate_analytics_key(site_id: int, db: Session = Depends(get_db)):
+    """Invalidates the old snippet (old key stops being recognized by
+    /collect) - use if a key ever leaks somewhere unexpected. Remember to
+    update the <script> tag on the site itself afterwards."""
+    site = db.query(models.AnalyticsSite).filter(models.AnalyticsSite.id == site_id).first()
+    if site is not None:
+        site.site_key = analytics.generate_site_key()
+        db.commit()
+    return RedirectResponse(url="/admin/analytics", status_code=303)
+
+
+@router.get(
+    "/analytics/sites/{site_id}",
+    response_class=HTMLResponse,
+    dependencies=[Depends(require_admin_session)],
+)
+def analytics_site_detail(request: Request, site_id: int, db: Session = Depends(get_db)):
+    site = db.query(models.AnalyticsSite).filter(models.AnalyticsSite.id == site_id).first()
+    if site is None:
+        raise HTTPException(status_code=404, detail="Site not found")
+    stats = analytics.site_stats(db, site)
+    return templates.TemplateResponse(
+        request,
+        "analytics_site.html",
+        {"site": site, "stats": stats, "snippet": _snippet(request, site)},
+    )

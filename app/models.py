@@ -122,3 +122,57 @@ class Lead(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     tenant = relationship("Tenant", back_populates="leads")
+
+
+class AnalyticsSite(Base):
+    """One microsite tracked by the self-hosted visitor analytics platform.
+
+    Independent of Tenant (which is keyed by phone number for call routing) -
+    a site can be tracked here whether or not it has a Retell agent yet.
+    `site_key` is embedded in the public `t.js` snippet on the site itself,
+    so treat it as an identifier, not a secret: it only ever lets someone
+    write page-view rows tagged with this site, never read anything back."""
+
+    __tablename__ = "analytics_sites"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+    domain = Column(String, unique=True, nullable=False, index=True)
+    site_key = Column(String, unique=True, nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    page_views = relationship(
+        "PageView", back_populates="site", cascade="all, delete-orphan"
+    )
+
+
+class PageView(Base):
+    """One page-view beacon from a tracked microsite. No raw IP address or
+    full user-agent string is stored anywhere - see app/analytics.py for the
+    pseudonymous, daily-rotating visitor_hash and the coarse device/browser
+    classification computed at ingest time."""
+
+    __tablename__ = "page_views"
+
+    id = Column(Integer, primary_key=True)
+    site_id = Column(Integer, ForeignKey("analytics_sites.id"), nullable=False, index=True)
+
+    path = Column(String, nullable=True)
+    referrer_host = Column(String, nullable=True, index=True)
+    search_engine = Column(String, nullable=True, index=True)
+    search_query = Column(String, nullable=True)
+
+    utm_source = Column(String, nullable=True)
+    utm_medium = Column(String, nullable=True)
+    utm_campaign = Column(String, nullable=True)
+    utm_term = Column(String, nullable=True)
+    utm_content = Column(String, nullable=True)
+
+    visitor_hash = Column(String, nullable=False, index=True)
+    device_type = Column(String, nullable=True)
+    browser = Column(String, nullable=True)
+    is_bot = Column(Boolean, nullable=False, default=False)
+
+    occurred_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+    site = relationship("AnalyticsSite", back_populates="page_views")

@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+{% block title %}{{ site.name }} &mdash; Visitor analytics{% endblock %}
+{% block body %}
+<div class="topbar">
+  <h1>{{ site.name }}</h1>
+  <a href="/admin/analytics">&larr; Back to all sites</a>
+</div>
+
+<div class="card">
+  <h2>Tracking snippet</h2>
+  <p class="muted">Paste this just before <code>&lt;/body&gt;</code> on {{ site.domain }}.</p>
+  <code class="url">{{ snippet }}</code>
+  <div style="margin-top:0.9rem;" class="row-actions">
+    <form class="inline" method="post" action="/admin/analytics/sites/{{ site.id }}/regenerate-key"
+          onsubmit="return confirm('Regenerate this site\'s key? The old snippet will stop recording until you update it on the site.');">
+      <button class="link" type="submit">Regenerate key</button>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Traffic</h2>
+  <div class="stat-row">
+    <div class="stat-tile">
+      <div class="stat-label">Views (24h)</div>
+      <div class="stat-value">{{ stats.views_24h }}</div>
+    </div>
+    <div class="stat-tile">
+      <div class="stat-label">Visitors (24h)</div>
+      <div class="stat-value">{{ stats.visitors_24h }}</div>
+    </div>
+    <div class="stat-tile">
+      <div class="stat-label">Views (7d)</div>
+      <div class="stat-value">{{ stats.views_7d }}</div>
+    </div>
+    <div class="stat-tile">
+      <div class="stat-label">Visitors (7d)</div>
+      <div class="stat-value">{{ stats.visitors_7d }}</div>
+    </div>
+    <div class="stat-tile">
+      <div class="stat-label">Views (30d)</div>
+      <div class="stat-value">{{ stats.views_30d }}</div>
+    </div>
+    <div class="stat-tile">
+      <div class="stat-label">Visitors (30d)</div>
+      <div class="stat-value">{{ stats.visitors_30d }}</div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Daily views (last 30 days with traffic)</h2>
+  <table>
+    <thead><tr><th>Date</th><th>Views</th><th>Unique visitors</th></tr></thead>
+    <tbody>
+    {% for day in stats.daily_series|reverse %}
+      <tr><td>{{ day.date }}</td><td>{{ day.views }}</td><td>{{ day.visitors }}</td></tr>
+    {% else %}
+      <tr><td colspan="3" class="muted">No views yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>Search queries that landed here</h2>
+  <p class="muted">
+    Google organic won't show a query here (Google strips it from the referrer) &mdash; the "Search
+    engines" table below still counts those visits under "google", just without the term. Bing,
+    DuckDuckGo, Yahoo, Yandex and Baidu pass the term through and appear here directly.
+  </p>
+  <table>
+    <thead><tr><th>Query</th><th>Times</th></tr></thead>
+    <tbody>
+    {% for query, count in stats.search_queries %}
+      <tr><td>{{ query }}</td><td>{{ count }}</td></tr>
+    {% else %}
+      <tr><td colspan="2" class="muted">No search queries captured yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>Search engines</h2>
+  <table>
+    <thead><tr><th>Engine</th><th>Visits</th></tr></thead>
+    <tbody>
+    {% for engine, count in stats.search_engines %}
+      <tr><td>{{ engine }}</td><td>{{ count }}</td></tr>
+    {% else %}
+      <tr><td colspan="2" class="muted">No search-engine referrals yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>Campaigns (UTM source / campaign / term)</h2>
+  <p class="muted">Set <code>utm_term</code> on your ad destination URLs for guaranteed keyword-level attribution, including from Google Ads.</p>
+  <table>
+    <thead><tr><th>Source</th><th>Campaign</th><th>Term</th><th>Visits</th></tr></thead>
+    <tbody>
+    {% for combo, count in stats.campaigns %}
+      <tr><td>{{ combo[0] or "—" }}</td><td>{{ combo[1] or "—" }}</td><td>{{ combo[2] or "—" }}</td><td>{{ count }}</td></tr>
+    {% else %}
+      <tr><td colspan="4" class="muted">No UTM-tagged traffic yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>Other referrers</h2>
+  <table>
+    <thead><tr><th>Referrer</th><th>Visits</th></tr></thead>
+    <tbody>
+    {% for host, count in stats.top_referrers %}
+      <tr><td>{{ host }}</td><td>{{ count }}</td></tr>
+    {% else %}
+      <tr><td colspan="2" class="muted">No non-search referrers yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>Top pages</h2>
+  <table>
+    <thead><tr><th>Path</th><th>Views</th></tr></thead>
+    <tbody>
+    {% for path, count in stats.top_pages %}
+      <tr><td>{{ path }}</td><td>{{ count }}</td></tr>
+    {% else %}
+      <tr><td colspan="2" class="muted">No page views yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>Recent visits</h2>
+  <table>
+    <thead><tr><th>When</th><th>Page</th><th>Came from</th><th>Query</th><th>Device</th></tr></thead>
+    <tbody>
+    {% for v in stats.recent %}
+      <tr>
+        <td>{{ v.occurred_at.strftime("%Y-%m-%d %H:%M") }}</td>
+        <td>{{ v.path or "—" }}</td>
+        <td>
+          {% if v.search_engine %}{{ v.search_engine }} (search)
+          {% elif v.utm_source %}{{ v.utm_source }}
+          {% elif v.referrer_host %}{{ v.referrer_host }}
+          {% else %}direct / unknown{% endif %}
+        </td>
+        <td>{{ v.search_query or v.utm_term or "—" }}</td>
+        <td>{{ v.device_type or "—" }}{% if v.is_bot %} (bot){% endif %}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="5" class="muted">No visits yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
