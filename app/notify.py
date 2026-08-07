@@ -28,12 +28,12 @@ def _format_message(tenant: Tenant, lead: Lead) -> str:
     return "\n".join(lines)
 
 
-def _send_email_via_postmark_api(tenant: Tenant, lead: Lead) -> None:
+def _send_via_postmark_api(to_email: str, subject: str, text_body: str) -> None:
     payload = {
         "From": settings.smtp_from,
-        "To": tenant.notify_email,
-        "Subject": f"New lead call from {lead.from_number or 'unknown number'}",
-        "TextBody": _format_message(tenant, lead),
+        "To": to_email,
+        "Subject": subject,
+        "TextBody": text_body,
         "MessageStream": "outbound",
     }
     try:
@@ -50,38 +50,52 @@ def _send_email_via_postmark_api(tenant: Tenant, lead: Lead) -> None:
         resp.raise_for_status()
     except httpx.HTTPStatusError as exc:
         logger.error(
-            "Failed to send lead email via Postmark API to %s: %s %s",
-            tenant.notify_email,
+            "Failed to send email via Postmark API to %s: %s %s",
+            to_email,
             exc.response.status_code,
             exc.response.text,
         )
     except httpx.HTTPError:
-        logger.exception("Failed to send lead email via Postmark API to %s", tenant.notify_email)
+        logger.exception("Failed to send email via Postmark API to %s", to_email)
 
 
-def _send_email_via_smtp(tenant: Tenant, lead: Lead) -> None:
-    msg = MIMEText(_format_message(tenant, lead))
-    msg["Subject"] = f"New lead call from {lead.from_number or 'unknown number'}"
+def _send_via_smtp(to_email: str, subject: str, text_body: str) -> None:
+    msg = MIMEText(text_body)
+    msg["Subject"] = subject
     msg["From"] = settings.smtp_from or settings.smtp_user
-    msg["To"] = tenant.notify_email
+    msg["To"] = to_email
 
     try:
         with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as server:
             server.starttls()
             if settings.smtp_user:
                 server.login(settings.smtp_user, settings.smtp_password)
-            server.sendmail(msg["From"], [tenant.notify_email], msg.as_string())
+            server.sendmail(msg["From"], [to_email], msg.as_string())
     except Exception:
-        logger.exception("Failed to send lead email via SMTP to %s", tenant.notify_email)
+        logger.exception("Failed to send email via SMTP to %s", to_email)
+
+
+def _send_generic_email(to_email: str, subject: str, text_body: str) -> None:
+    if settings.postmark_api_token:
+        _send_via_postmark_api(to_email, subject, text_body)
+    elif settings.smtp_host:
+        _send_via_smtp(to_email, subject, text_body)
 
 
 def send_email(tenant: Tenant, lead: Lead) -> None:
     if not tenant.notify_email:
         return
-    if settings.postmark_api_token:
-        _send_email_via_postmark_api(tenant, lead)
-    elif settings.smtp_host:
-        _send_email_via_smtp(tenant, lead)
+    subject = f"New lead call from {lead.from_number or 'unknown number'}"
+    _send_generic_email(tenant.notify_email, subject, _format_message(tenant, lead))
+
+
+def send_rank_alert(to_email: str, subject: str, text_body: str) -> None:
+    """Same email paths as send_email, but for a ranking alert rather than a
+    lead - recipient/subject/body are given directly since there's no Lead
+    to format from."""
+    if not to_email:
+        return
+    _send_generic_email(to_email, subject, text_body)
 
 
 def send_sms(tenant: Tenant, lead: Lead) -> None:

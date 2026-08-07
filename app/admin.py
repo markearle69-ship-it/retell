@@ -12,6 +12,7 @@ from . import models, provisioning
 from .config import settings
 from .db import get_db
 from .provisioning import ProvisioningError, provision_site
+from .rank_checker import check_ranking
 from .session import (
     SESSION_COOKIE_NAME,
     SESSION_MAX_AGE,
@@ -137,6 +138,8 @@ def upsert_tenant(
     notify_sms_number: Optional[str] = Form(None),
     location: Optional[str] = Form(None),
     zip_codes: Optional[str] = Form(None),
+    domain: Optional[str] = Form(None),
+    target_keyword: Optional[str] = Form(None),
     niche_id: Optional[str] = Form(None),
     force_reprovision: Optional[str] = Form(None),
     db: Session = Depends(get_db),
@@ -159,6 +162,8 @@ def upsert_tenant(
     tenant.notify_sms_number = (notify_sms_number or "").strip() or None
     tenant.location = (location or "").strip() or None
     tenant.zip_codes = (zip_codes or "").strip() or None
+    tenant.domain = (domain or "").strip().lower() or None
+    tenant.target_keyword = (target_keyword or "").strip() or None
 
     if niche_id_int:
         niche = db.query(models.NicheTemplate).filter(models.NicheTemplate.id == niche_id_int).first()
@@ -210,6 +215,63 @@ def delete_tenant(tenant_id: int, db: Session = Depends(get_db)):
         db.delete(tenant)
         db.commit()
     return RedirectResponse(url="/admin", status_code=303)
+
+
+@router.get("/rankings", response_class=HTMLResponse, dependencies=[Depends(require_admin_session)])
+def rankings(request: Request, db: Session = Depends(get_db)):
+    tenants = (
+        db.query(models.Tenant)
+        .filter(models.Tenant.domain.isnot(None))
+        .order_by(models.Tenant.business_name)
+        .all()
+    )
+
+    rows = []
+    for tenant in tenants:
+        checks = tenant.rank_checks[:2]  # relationship is already ordered newest-first
+        latest = checks[0] if checks else None
+        previous = checks[1] if len(checks) > 1 else None
+        rows.append({"tenant": tenant, "latest": latest, "previous": previous})
+
+    no_domain_count = (
+        db.query(models.Tenant).filter(models.Tenant.domain.is_(None)).count()
+    )
+
+    return templates.TemplateResponse(
+        request,
+        "rankings.html",
+        {
+            "rows": rows,
+            "no_domain_count": no_domain_count,
+            "serpapi_configured": bool(settings.serpapi_key),
+        },
+    )
+
+
+@router.post(
+    "/rankings/{tenant_id}/check", response_class=HTMLResponse, dependencies=[Depends(require_admin_session)]
+)
+def check_one_ranking(tenant_id: int, db: Session = Depends(get_db)):
+    """Runs one ranking check immediately, outside the cron schedule - handy
+    for testing a new site's domain/keyword before waiting for the next run
+    of scripts/check_rankings.py."""
+    tenant = db.query(models.Tenant).filter(models.Tenant.id == tenant_id).first()
+    if tenant is None:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    result = check_ranking(tenant, niche=tenant.niche_template)
+    db.add(
+        models.RankCheck(
+            tenant_id=tenant.id,
+            query=result.query,
+            position=result.position,
+            matched_url=result.matched_url,
+            num_results_checked=result.num_results_checked,
+            error=result.error,
+        )
+    )
+    db.commit()
+    return RedirectResponse(url="/admin/rankings", status_code=303)
 
 
 @router.get(

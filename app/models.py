@@ -84,10 +84,21 @@ class Tenant(Base):
     provisioned_at = Column(DateTime, nullable=True)
     provisioning_error = Column(Text, nullable=True)
 
+    # Rank tracking. This site's EMD (exact-match domain), e.g.
+    # "socorroplumbingrepair.com" - matched against SERP result URLs.
+    domain = Column(String, nullable=True)
+    # Override for the search phrase to check (without location - that comes
+    # from `location` above). Falls back to the niche's service_description,
+    # then business_name, if left blank. See rank_checker.build_query().
+    target_keyword = Column(String, nullable=True)
+
     created_at = Column(DateTime, default=datetime.utcnow)
 
     leads = relationship("Lead", back_populates="tenant")
     niche_template = relationship("NicheTemplate", back_populates="tenants")
+    rank_checks = relationship(
+        "RankCheck", back_populates="tenant", order_by="RankCheck.checked_at.desc()"
+    )
 
 
 class Lead(Base):
@@ -122,3 +133,31 @@ class Lead(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     tenant = relationship("Tenant", back_populates="leads")
+
+
+class RankCheck(Base):
+    """One organic-search ranking snapshot for a site, e.g. from a cron job
+    that periodically runs scripts/check_rankings.py."""
+
+    __tablename__ = "rank_checks"
+
+    id = Column(Integer, primary_key=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
+
+    query = Column(String, nullable=False)
+    search_engine = Column(String, nullable=False, default="google")
+
+    # Null position means the domain wasn't found in the results scanned
+    # (num_results, at query time) - not necessarily "not ranking at all".
+    position = Column(Integer, nullable=True)
+    matched_url = Column(String, nullable=True)
+    num_results_checked = Column(Integer, nullable=True)
+
+    # Set instead of position/matched_url if the provider call itself failed
+    # (rate limit, bad API key, network error, etc.) so a failed check is
+    # distinguishable from a genuine "not ranked" result.
+    error = Column(Text, nullable=True)
+
+    checked_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+    tenant = relationship("Tenant", back_populates="rank_checks")

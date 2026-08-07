@@ -17,6 +17,10 @@ _ADDITIVE_COLUMNS = {
         "problem_domain": "TEXT",
         "collect_list": "TEXT",
     },
+    "tenants": {
+        "domain": "TEXT",
+        "target_keyword": "TEXT",
+    },
 }
 
 

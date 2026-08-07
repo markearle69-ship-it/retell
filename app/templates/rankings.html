@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block body %}
+<div class="topbar">
+  <h1>Rankings</h1>
+  <div>
+    <a href="/admin" class="muted">&larr; Back to dashboard</a>
+  </div>
+</div>
+
+{% if not serpapi_configured %}
+<div class="card" style="border: 1px solid #dc2626;">
+  <h2 style="color:#dc2626;">SERPAPI_KEY not set</h2>
+  <p>"Check now" and the scheduled <code>scripts/check_rankings.py</code> job will fail until you set
+  <code>SERPAPI_KEY</code> in your environment. See the README's "Rank tracking" section.</p>
+</div>
+{% endif %}
+
+<div class="card">
+  <p class="muted">
+    Set a site's domain (and optionally a keyword override) on its entry in the dashboard to start
+    tracking it here. Results come from <a href="https://serpapi.com" target="_blank" rel="noopener">SerpApi</a>,
+    run on whatever schedule you've set up for <code>scripts/check_rankings.py</code> - "Check now" runs one
+    check immediately, outside that schedule.
+    {% if no_domain_count %}{{ no_domain_count }} site{{ "s" if no_domain_count != 1 else "" }} still need a domain set.{% endif %}
+  </p>
+  <table>
+    <thead>
+      <tr><th>Site</th><th>Domain</th><th>Query</th><th>Position</th><th>Trend</th><th>Checked</th><th></th></tr>
+    </thead>
+    <tbody>
+    {% for row in rows %}
+      <tr>
+        <td>{{ row.tenant.business_name }}</td>
+        <td>{{ row.tenant.domain }}</td>
+        <td>{{ row.latest.query if row.latest else "—" }}</td>
+        <td>
+          {% if row.latest is none %}
+            <span class="muted">Not checked yet</span>
+          {% elif row.latest.error %}
+            <span style="color:#dc2626;" title="{{ row.latest.error }}">Error</span>
+          {% elif row.latest.position %}
+            #{{ row.latest.position }}
+          {% else %}
+            <span class="muted">Not in top {{ row.latest.num_results_checked }}</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if row.latest and row.previous and not row.latest.error and not row.previous.error %}
+            {% set prev = row.previous.position or (row.previous.num_results_checked + 1) %}
+            {% set cur = row.latest.position or (row.latest.num_results_checked + 1) %}
+            {% if cur < prev %}
+              <span style="color:#16a34a;">&uarr; up {{ prev - cur }}</span>
+            {% elif cur > prev %}
+              <span style="color:#dc2626;">&darr; down {{ cur - prev }}</span>
+            {% else %}
+              <span class="muted">no change</span>
+            {% endif %}
+          {% else %}
+            <span class="muted">—</span>
+          {% endif %}
+        </td>
+        <td>{{ row.latest.checked_at.strftime("%Y-%m-%d %H:%M") if row.latest else "—" }}</td>
+        <td>
+          <form class="inline" method="post" action="/admin/rankings/{{ row.tenant.id }}/check">
+            <button class="link" type="submit">Check now</button>
+          </form>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="7" class="muted">No sites with a domain set yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

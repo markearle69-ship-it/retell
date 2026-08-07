@@ -70,3 +70,27 @@ def test_send_email_noop_when_nothing_configured(monkeypatch):
         notify.send_email(_tenant(notify_email="joe@example.com"), _lead())
         mock_post.assert_not_called()
         mock_smtp.assert_not_called()
+
+
+def test_send_rank_alert_noop_without_recipient(monkeypatch):
+    monkeypatch.setattr(notify.settings, "postmark_api_token", "pm-token")
+    with patch("app.notify.httpx.post") as mock_post:
+        notify.send_rank_alert("", "subject", "body")
+        mock_post.assert_not_called()
+
+
+def test_send_rank_alert_uses_postmark_api_when_token_set(monkeypatch):
+    monkeypatch.setattr(notify.settings, "postmark_api_token", "pm-token")
+    monkeypatch.setattr(notify.settings, "smtp_from", "notifications@notify.example.com")
+
+    mock_response = MagicMock()
+    mock_response.raise_for_status.return_value = None
+
+    with patch("app.notify.httpx.post", return_value=mock_response) as mock_post:
+        notify.send_rank_alert("owner@example.com", "[Ranking drop] Joe's Plumbing", "dropped to position 15")
+
+        mock_post.assert_called_once()
+        _, kwargs = mock_post.call_args
+        assert kwargs["json"]["To"] == "owner@example.com"
+        assert kwargs["json"]["Subject"] == "[Ranking drop] Joe's Plumbing"
+        assert kwargs["json"]["TextBody"] == "dropped to position 15"

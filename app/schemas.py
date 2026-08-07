@@ -9,6 +9,8 @@ class TenantCreate(BaseModel):
     to_number: str
     notify_email: Optional[EmailStr] = None
     notify_sms_number: Optional[str] = None
+    domain: Optional[str] = None
+    target_keyword: Optional[str] = None
 
 
 class TenantOut(TenantCreate):

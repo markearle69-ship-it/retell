@@ -3,6 +3,7 @@
 <div class="topbar">
   <h1>Retell Lead Router</h1>
   <div>
+    <a href="/admin/rankings" class="muted" style="margin-right: 1rem;">Rankings</a>
     <a href="/admin/niches" class="muted" style="margin-right: 1rem;">Niche templates</a>
     <form class="inline" method="post" action="/admin/logout"><button class="secondary" type="submit">Log out</button></form>
   </div>
@@ -61,6 +62,16 @@
       <label>Zip codes covered (used in prompt)</label>
       <input name="zip_codes" placeholder="79927, 79928 and 79929"
              value="{{ edit_tenant.zip_codes if edit_tenant else '' }}" />
+    </div>
+    <div>
+      <label>Domain (for rank tracking)</label>
+      <input name="domain" placeholder="socorroplumbingrepair.com"
+             value="{{ edit_tenant.domain if edit_tenant else '' }}" />
+    </div>
+    <div>
+      <label>Rank tracking keyword (optional override)</label>
+      <input name="target_keyword" placeholder="defaults to niche's service description"
+             value="{{ edit_tenant.target_keyword if edit_tenant else '' }}" />
     </div>
     <div>
       <label>Niche (auto-provision)</label>

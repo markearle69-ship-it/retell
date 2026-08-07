@@ -1,0 +1,38 @@
+name: Check rankings
+
+# Runs scripts/check_rankings.py on a schedule against your deployed DB. This
+# is one option for the cron job - if your host already gives you one
+# (Railway's cron plugin, a VPS crontab, etc.) that works just as well and
+# doesn't need these secrets handed to GitHub. See the README's
+# "Rank tracking" section.
+
+on:
+  schedule:
+    # 08:00 UTC daily. Cron minimum interval on GitHub Actions is 5 minutes;
+    # daily is plenty for rank tracking - SERPs don't move that fast.
+    - cron: "0 8 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  check-rankings:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run ranking checks
+        env:
+          # Must point at your real (e.g. Railway Postgres) database, reachable
+          # from the internet - not the local sqlite default.
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SERPAPI_KEY: ${{ secrets.SERPAPI_KEY }}
+          RANK_CHECK_ALERT_EMAIL: ${{ secrets.RANK_CHECK_ALERT_EMAIL }}
+          POSTMARK_API_TOKEN: ${{ secrets.POSTMARK_API_TOKEN }}
+          SMTP_FROM: ${{ secrets.SMTP_FROM }}
+        run: python scripts/check_rankings.py

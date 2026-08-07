@@ -41,6 +41,17 @@ class Settings(BaseSettings):
     twilio_sip_password: str = ""
     retell_allowed_inbound_countries: str = "US,GB"
 
+    # Rank tracking (scripts/check_rankings.py). Uses SerpApi's Google Search
+    # API rather than driving a real/incognito browser - see the script's
+    # docstring for why. https://serpapi.com
+    serpapi_key: str = ""
+    # Where to email a site when its ranking check fails outright or its
+    # position gets worse than rank_check_alert_threshold (or drops off the
+    # results entirely). This is you, the site operator - not the tenant.
+    rank_check_alert_email: str = ""
+    rank_check_alert_threshold: int = 10
+    rank_check_num_results: int = 100
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 

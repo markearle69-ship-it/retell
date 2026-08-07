@@ -176,6 +176,50 @@ change — you're just adding a webhook destination in Retell.
    after provisioning, tweak the agent/prompt further in Retell's dashboard
    as needed — the panel doesn't try to keep them in sync afterward.
 
+## Rank tracking
+
+Since these are rank-and-rent EMDs, you'll also want to know where each one
+actually ranks for its service + location. `scripts/check_rankings.py`
+checks Google for every site that has a `domain` set (add it in the
+dashboard's site form, alongside an optional keyword override — it defaults
+to the site's niche `service_description` + `location`), records the
+position in the `rank_checks` table, and emails
+`RANK_CHECK_ALERT_EMAIL` if a site's position gets worse than
+`RANK_CHECK_ALERT_THRESHOLD` (default 10) or falls out of the results
+scanned entirely. Results and a per-site "Check now" button live at
+`/admin/rankings`.
+
+**Why not literally drive an incognito browser search?** It doesn't hold up
+at 70-site scale: Google rate-limits/CAPTCHA's automated queries from a
+single IP after a handful of searches (incognito only avoids *your*
+personalization — it does nothing about that), and scraping results that way
+is against Google's Terms of Service. Instead the script calls
+[SerpApi](https://serpapi.com) (has a usable free tier; you'll likely want a
+paid plan to check ~70 sites daily), which runs the search server-side and
+returns structured JSON — the same approach every commercial rank tracker
+uses under the hood. Set `SERPAPI_KEY` to use it; swap
+`app/rank_checker.py`'s `_fetch_serp` for another provider
+(DataForSEO, ValueSerp, ...) if you'd rather use one.
+
+Run it manually with:
+
+```bash
+python scripts/check_rankings.py            # every site with a domain set
+python scripts/check_rankings.py --tenant-id 5
+python scripts/check_rankings.py --dry-run  # prints results, writes/alerts nothing
+```
+
+For the actual periodic cron job, pick whichever fits your deployment:
+
+- **A plain crontab** (VPS deployments): `0 8 * * * cd /path/to/app && .venv/bin/python scripts/check_rankings.py >> rank-check.log 2>&1`
+- **GitHub Actions**: `.github/workflows/check-rankings.yml` is included,
+  scheduled daily — set `DATABASE_URL`/`SERPAPI_KEY`/etc as repo secrets
+  (your `DATABASE_URL` needs to be reachable from the internet, e.g. a
+  Railway/managed Postgres instance, not local SQLite).
+- **Railway's cron plugin** (or Render's Cron Jobs) if you're already
+  deployed there — point it at `python scripts/check_rankings.py` with the
+  same env vars as the web service.
+
 ## Running tests
 
 ```bash
