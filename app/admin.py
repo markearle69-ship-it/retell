@@ -12,6 +12,7 @@ from . import models, provisioning
 from .config import settings
 from .db import get_db
 from .provisioning import ProvisioningError, provision_site
+from .social_provisioning import provision_social
 from .session import (
     SESSION_COOKIE_NAME,
     SESSION_MAX_AGE,
@@ -137,6 +138,8 @@ def upsert_tenant(
     notify_sms_number: Optional[str] = Form(None),
     location: Optional[str] = Form(None),
     zip_codes: Optional[str] = Form(None),
+    logo_url: Optional[str] = Form(None),
+    brand_color: Optional[str] = Form(None),
     niche_id: Optional[str] = Form(None),
     force_reprovision: Optional[str] = Form(None),
     db: Session = Depends(get_db),
@@ -159,6 +162,8 @@ def upsert_tenant(
     tenant.notify_sms_number = (notify_sms_number or "").strip() or None
     tenant.location = (location or "").strip() or None
     tenant.zip_codes = (zip_codes or "").strip() or None
+    tenant.logo_url = (logo_url or "").strip() or None
+    tenant.brand_color = (brand_color or "").strip() or None
 
     if niche_id_int:
         niche = db.query(models.NicheTemplate).filter(models.NicheTemplate.id == niche_id_int).first()
@@ -297,6 +302,75 @@ def sync_one_agent(request: Request, tenant_id: int, db: Session = Depends(get_d
     )
 
 
+@router.get(
+    "/tenants/{tenant_id}/social", response_class=HTMLResponse, dependencies=[Depends(require_admin_session)]
+)
+def tenant_social(request: Request, tenant_id: int, db: Session = Depends(get_db)):
+    tenant = db.query(models.Tenant).filter(models.Tenant.id == tenant_id).first()
+    if tenant is None:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+    posts = (
+        db.query(models.SocialPost)
+        .filter(models.SocialPost.tenant_id == tenant_id)
+        .order_by(models.SocialPost.scheduled_for.desc())
+        .all()
+    )
+    return templates.TemplateResponse(request, "tenant_social.html", {"tenant": tenant, "posts": posts})
+
+
+@router.post(
+    "/tenants/{tenant_id}/provision-social",
+    response_class=HTMLResponse,
+    dependencies=[Depends(require_admin_session)],
+)
+def provision_one_social(request: Request, tenant_id: int, db: Session = Depends(get_db)):
+    """Create the site's Ayrshare profile if missing, top up its post queue,
+    and generate+schedule whatever's still in draft. Safe to resubmit -
+    already-scheduled posts and an already-created profile are left alone."""
+    tenant = db.query(models.Tenant).filter(models.Tenant.id == tenant_id).first()
+    if tenant is None:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+    if tenant.niche_template_id is None:
+        raise HTTPException(status_code=400, detail="Site has no niche selected - pick one first.")
+
+    niche = db.query(models.NicheTemplate).filter(models.NicheTemplate.id == tenant.niche_template_id).first()
+    try:
+        provision_social(db, tenant, niche)
+    except ProvisioningError:
+        pass  # tenant.social_provisioning_error is already persisted; shown on the social page
+
+    return RedirectResponse(url=f"/admin/tenants/{tenant_id}/social", status_code=303)
+
+
+@router.post(
+    "/provision-social", response_class=HTMLResponse, dependencies=[Depends(require_admin_session)]
+)
+def provision_all_social(request: Request, db: Session = Depends(get_db)):
+    """Same as provision_one_social but for every site with a niche selected -
+    for topping up all 60+ sites' content queues in one click."""
+    tenants = (
+        db.query(models.Tenant)
+        .filter(models.Tenant.niche_template_id.isnot(None))
+        .order_by(models.Tenant.business_name)
+        .all()
+    )
+
+    results = []
+    for tenant in tenants:
+        niche = db.query(models.NicheTemplate).filter(models.NicheTemplate.id == tenant.niche_template_id).first()
+        if niche is None:
+            results.append({"business_name": tenant.business_name, "status": "error: niche not found"})
+            continue
+        try:
+            provision_social(db, tenant, niche)
+            status = "provisioned"
+        except ProvisioningError as exc:
+            status = f"error: {exc}"
+        results.append({"business_name": tenant.business_name, "status": status})
+
+    return templates.TemplateResponse(request, "sync_results.html", {"results": results})
+
+
 @router.post("/niches", dependencies=[Depends(require_admin_session)])
 def upsert_niche(
     niche_id: Optional[int] = Form(None),
@@ -308,6 +382,10 @@ def upsert_niche(
     service_description: Optional[str] = Form(None),
     problem_domain: Optional[str] = Form(None),
     collect_list: Optional[str] = Form(None),
+    social_content_pillars: Optional[str] = Form(None),
+    social_caption_style: Optional[str] = Form(None),
+    social_platforms: Optional[str] = Form(None),
+    social_template_uid: Optional[str] = Form(None),
     db: Session = Depends(get_db),
 ):
     niche = None
@@ -325,6 +403,10 @@ def upsert_niche(
     niche.service_description = (service_description or "").strip() or None
     niche.problem_domain = (problem_domain or "").strip() or None
     niche.collect_list = (collect_list or "").strip() or None
+    niche.social_content_pillars = (social_content_pillars or "").strip() or None
+    niche.social_caption_style = (social_caption_style or "").strip() or None
+    niche.social_platforms = (social_platforms or "").strip() or None
+    niche.social_template_uid = (social_template_uid or "").strip() or None
 
     db.commit()
     return RedirectResponse(url="/admin/niches", status_code=303)

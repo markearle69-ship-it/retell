@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block body %}
+<div class="topbar">
+  <h1>Social &mdash; {{ tenant.business_name }}</h1>
+  <a href="/admin">&larr; Back to sites</a>
+</div>
+
+{% if not tenant.niche_template_id %}
+<div class="card" style="border: 1px solid #dc2626;">
+  <h2 style="color:#dc2626;">No niche selected</h2>
+  <p>Pick a niche for this site on its edit form first &mdash; content pillars, caption style, and
+  platforms all come from the niche.</p>
+</div>
+{% endif %}
+
+{% if tenant.social_provisioning_error %}
+<div class="card" style="border: 1px solid #dc2626;">
+  <h2 style="color:#dc2626;">Last run had failures</h2>
+  <p>{{ tenant.social_provisioning_error }}</p>
+  <p class="muted">Whatever succeeded was kept. Resubmit "Provision social" below to retry only what failed.</p>
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>Ayrshare profile</h2>
+  {% if tenant.ayrshare_profile_key %}
+    <p><code class="url">{{ tenant.ayrshare_profile_key }}</code></p>
+    <p class="muted">
+      Profile created. <strong>One manual step per new site:</strong> in Ayrshare's dashboard
+      (Business Plan &rarr; Profiles), open this profile and link its real Facebook/Instagram/etc.
+      accounts via OAuth &mdash; there's no API workaround for that step, so it's a one-time click
+      per site rather than per post. Everything else on this page runs automatically.
+    </p>
+  {% else %}
+    <p class="muted">No profile yet &mdash; click "Provision social" below to create one.</p>
+  {% endif %}
+  <form method="post" action="/admin/tenants/{{ tenant.id }}/provision-social">
+    <button type="submit" {% if not tenant.niche_template_id %}disabled{% endif %}>Provision social</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Posts ({{ posts|length }})</h2>
+  <table>
+    <thead><tr><th>Scheduled for</th><th>Pillar</th><th>Caption</th><th>Creative</th><th>Platforms</th><th>Status</th></tr></thead>
+    <tbody>
+    {% for p in posts %}
+      <tr>
+        <td>{{ p.scheduled_for.strftime("%Y-%m-%d %H:%M") }}</td>
+        <td>{{ p.content_pillar or "—" }}</td>
+        <td>{{ p.caption }}</td>
+        <td>{% if p.image_url %}<a href="{{ p.image_url }}" target="_blank" rel="noopener">image</a>{% else %}<span class="muted">text only</span>{% endif %}</td>
+        <td>{{ p.platforms }}</td>
+        <td>
+          {% if p.status == "scheduled" %}
+            <span style="color:#16a34a;">Scheduled</span>
+          {% elif p.status == "posted" %}
+            <span style="color:#16a34a;">Posted</span>
+          {% elif p.status == "failed" %}
+            <span style="color:#dc2626;" title="{{ p.error }}">Failed</span>
+          {% else %}
+            <span class="muted">Draft</span>
+          {% endif %}
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="muted">No posts yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

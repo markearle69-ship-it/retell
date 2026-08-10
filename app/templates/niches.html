@@ -95,6 +95,36 @@
         <input name="model" value="{{ edit_niche.model if edit_niche else 'gpt-4.1' }}" />
       </div>
     </div>
+
+    <h3 style="margin: 1.25rem 0 0.5rem; font-size: 1rem;">Social posting</h3>
+    <p class="muted" style="margin-top:0;">
+      Drives "Provision social" for sites using this niche &mdash; captions rotate through the
+      pillars below, one per generated post.
+    </p>
+    <div style="margin-bottom: 0.75rem;">
+      <label class="muted">Content pillars (one per line, rotated through)</label><br />
+      <textarea name="social_content_pillars" rows="4"
+                style="width:100%; box-sizing:border-box;"
+                placeholder="a quick maintenance tip&#10;a common warning sign customers ignore&#10;why choose a local licensed pro&#10;a recent job / customer story"
+      >{{ edit_niche.social_content_pillars if edit_niche else '' }}</textarea>
+    </div>
+    <div style="margin-bottom: 0.75rem;">
+      <label class="muted">Caption voice/style</label><br />
+      <input name="social_caption_style" style="width:100%; box-sizing:border-box;"
+             value="{{ edit_niche.social_caption_style if edit_niche else '' }}"
+             placeholder="friendly, plain-spoken, no jargon, always end with a call to action" />
+    </div>
+    <div class="form-grid" style="margin-bottom: 0.75rem;">
+      <div>
+        <label>Platforms (comma-separated, blank = default)</label>
+        <input name="social_platforms" value="{{ edit_niche.social_platforms if edit_niche else '' }}"
+               placeholder="facebook,instagram" />
+      </div>
+      <div>
+        <label>Bannerbear template UID (blank = default)</label>
+        <input name="social_template_uid" value="{{ edit_niche.social_template_uid if edit_niche else '' }}" />
+      </div>
+    </div>
     <button type="submit">{% if edit_niche %}Save changes{% else %}Add niche{% endif %}</button>
     {% if edit_niche %}<a href="/admin/niches" class="muted" style="margin-left:0.5rem;">Cancel</a>{% endif %}
   </form>

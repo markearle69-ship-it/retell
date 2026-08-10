@@ -41,6 +41,44 @@ class Settings(BaseSettings):
     twilio_sip_password: str = ""
     retell_allowed_inbound_countries: str = "US,GB"
 
+    # Social auto-provisioning: content generation + scheduling for each
+    # site's socials, mirroring the Retell voice-agent auto-provisioning above.
+    #
+    # Ayrshare (https://ayrshare.com) - one account manages every site's
+    # social profiles via API. ayrshare_api_key is your Business Plan master
+    # key; each site gets its own "profile" (see social_provisioning.py),
+    # keyed by ayrshare_profile_key stored on the Tenant row.
+    ayrshare_api_key: str = ""
+    ayrshare_api_base: str = "https://app.ayrshare.com/api"
+
+    # Anthropic (Claude) - generates on-brand, niche+location-varied caption
+    # copy per post so 60+ sites in the same niche don't read as duplicates.
+    anthropic_api_key: str = ""
+    anthropic_model: str = "claude-sonnet-5"
+
+    # Bannerbear (https://bannerbear.com) - renders branded creative images
+    # from a template (logo/colors/text layers) per post, so nobody's
+    # hand-designing images 60 times. bannerbear_template_uid is the default
+    # template used when a niche doesn't set its own.
+    bannerbear_api_key: str = ""
+    bannerbear_api_base: str = "https://api.bannerbear.com/v2"
+    bannerbear_template_uid: str = ""
+
+    # Scheduling defaults, used when a niche template leaves its own blank.
+    # Platform names follow Ayrshare's convention, e.g.:
+    # facebook, instagram, linkedin, twitter, gmb (Google Business Profile).
+    #
+    # GMB deliberately isn't in the default list: Google requires a verified
+    # physical/service-area business tied to a real, contactable business
+    # before it'll accept a Business Profile, and mass-created listings on
+    # rank-and-rent sites get suspended quickly. Add "gmb" per niche (or here)
+    # only for sites where you actually hold a verified listing.
+    social_default_platforms: str = "facebook,instagram"
+    # How many upcoming posts "Provision social" tops the queue up to, per run.
+    social_posts_per_batch: int = 6
+    # Spacing between a site's scheduled posts.
+    social_post_interval_hours: int = 60
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 

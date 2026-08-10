@@ -16,6 +16,18 @@ _ADDITIVE_COLUMNS = {
         "service_description": "TEXT",
         "problem_domain": "TEXT",
         "collect_list": "TEXT",
+        "social_content_pillars": "TEXT",
+        "social_caption_style": "TEXT",
+        "social_platforms": "TEXT",
+        "social_template_uid": "TEXT",
+    },
+    "tenants": {
+        "logo_url": "TEXT",
+        "brand_color": "TEXT",
+        "ayrshare_profile_key": "TEXT",
+        "ayrshare_ref_id": "TEXT",
+        "social_provisioned_at": "TIMESTAMP",
+        "social_provisioning_error": "TEXT",
     },
 }
 

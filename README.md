@@ -176,6 +176,57 @@ change — you're just adding a webhook destination in Retell.
    after provisioning, tweak the agent/prompt further in Retell's dashboard
    as needed — the panel doesn't try to keep them in sync afterward.
 
+## (Optional) Auto-provisioning socials
+
+This does for each site's socials what section 6 above does for its phone
+agent: one form submit generates a batch of on-brand captions, renders a
+branded creative for each (if configured), and schedules them - instead of
+setting each site up by hand in a scheduler's UI 60+ times.
+
+**What it doesn't automate:** linking each site's actual Facebook/Instagram
+accounts. That's an OAuth step and platforms require a human to click
+through it - there's no API workaround. It's a one-time click per new site,
+not per post, in Ayrshare's own dashboard (Business Plan → Profiles → open
+the site's profile → connect accounts). Everything before and after that one
+click is automated.
+
+**Google Business Profile is deliberately not a default platform.** GBP
+requires a verified physical/service-area listing tied to a real,
+contactable business, and mass-created listings on rank-and-rent sites get
+suspended quickly - if you don't already hold a verified listing for a site,
+don't fight this; skip GBP for it. Add `gmb` to a niche's platforms only for
+sites where you genuinely hold one.
+
+1. **Set up the three integrations** (all in `.env`, see `.env.example`):
+   - [Ayrshare](https://ayrshare.com) Business Plan → `AYRSHARE_API_KEY`.
+     Every site gets its own "profile" under this one account.
+   - [Anthropic](https://console.anthropic.com) → `ANTHROPIC_API_KEY`. Writes
+     the captions, varying wording/hook/local detail per post so 60+ sites in
+     the same niche don't read as duplicated content.
+   - [Bannerbear](https://bannerbear.com) → `BANNERBEAR_API_KEY` +
+     `BANNERBEAR_TEMPLATE_UID`, optional. Renders a branded image per post
+     from a template with text layers named `caption` and `business_name`,
+     and an optional image layer named `logo`. Leave blank to post text-only.
+
+2. In `/admin/niches`, add **content pillars** (one topic/angle per line,
+   e.g. "a quick maintenance tip", "a common warning sign", "why choose a
+   local licensed pro") and a caption **voice/style** to each niche - these
+   drive what Claude writes for every site in that niche. Optionally override
+   platforms or the Bannerbear template per niche.
+
+3. On a site's row in `/admin`, once it has a niche selected, click into its
+   **Social** page and hit **Provision social**. First run creates its
+   Ayrshare profile (shows you the profile key + the one-time reminder to
+   link its social accounts in Ayrshare's dashboard), generates a batch of
+   captions + creatives, and schedules them. Re-running it (manually, or via
+   the "Provision social for all sites" button on the dashboard) only tops up
+   the queue back to the configured batch size - already-scheduled posts and
+   an already-created profile are left alone.
+
+4. If a specific post fails (e.g. a creative render error), it's marked
+   **Failed** with the reason shown on the site's Social page - re-running
+   "Provision social" retries only that post, not the whole batch.
+
 ## Running tests
 
 ```bash

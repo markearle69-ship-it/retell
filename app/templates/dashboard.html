@@ -63,6 +63,16 @@
              value="{{ edit_tenant.zip_codes if edit_tenant else '' }}" />
     </div>
     <div>
+      <label>Logo URL (used in social creatives)</label>
+      <input name="logo_url" placeholder="https://example.com/logo.png"
+             value="{{ edit_tenant.logo_url if edit_tenant else '' }}" />
+    </div>
+    <div>
+      <label>Brand color (used in social creatives)</label>
+      <input name="brand_color" placeholder="#2563eb"
+             value="{{ edit_tenant.brand_color if edit_tenant else '' }}" />
+    </div>
+    <div>
       <label>Niche (auto-provision)</label>
       <select name="niche_id">
         <option value="">&mdash; manual, no auto-provisioning &mdash;</option>
@@ -91,7 +101,7 @@
   <h2>Sites ({{ tenants|length }})</h2>
   <table>
     <thead>
-      <tr><th>Agent / site</th><th>Twilio number</th><th>Forward SMS</th><th>Email</th><th>Leads</th><th>Provisioning</th><th></th></tr>
+      <tr><th>Agent / site</th><th>Twilio number</th><th>Forward SMS</th><th>Email</th><th>Leads</th><th>Provisioning</th><th>Social</th><th></th></tr>
     </thead>
     <tbody>
     {% for t in tenants %}
@@ -113,6 +123,17 @@
           {% endif %}
         </td>
         <td>
+          {% if t.social_provisioning_error %}
+            <a href="/admin/tenants/{{ t.id }}/social" style="color:#dc2626;" title="{{ t.social_provisioning_error }}">Error</a>
+          {% elif t.ayrshare_profile_key %}
+            <a href="/admin/tenants/{{ t.id }}/social">Set up &#10003;</a>
+          {% elif t.niche_template_id %}
+            <a href="/admin/tenants/{{ t.id }}/social" class="muted">Not started</a>
+          {% else %}
+            <span class="muted">&mdash;</span>
+          {% endif %}
+        </td>
+        <td>
           <div class="row-actions">
             <a href="/admin?edit_id={{ t.id }}">Edit</a>
             {% if t.retell_llm_id %}
@@ -128,10 +149,22 @@
         </td>
       </tr>
     {% else %}
-      <tr><td colspan="7" class="muted">No sites yet &mdash; add one above.</td></tr>
+      <tr><td colspan="8" class="muted">No sites yet &mdash; add one above.</td></tr>
     {% endfor %}
     </tbody>
   </table>
+</div>
+
+<div class="card">
+  <h2>Social posting</h2>
+  <p class="muted">
+    Tops up every site's (with a niche selected) post queue to the configured batch size, generating
+    captions + creatives and scheduling them on Ayrshare. Safe to run on a schedule (e.g. weekly) &mdash;
+    already-scheduled posts are left alone, only the shortfall is generated.
+  </p>
+  <form method="post" action="/admin/provision-social">
+    <button type="submit">Provision social for all sites</button>
+  </form>
 </div>
 
 <div class="card">
