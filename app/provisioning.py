@@ -185,16 +185,26 @@ def create_retell_agent(niche: "NicheTemplate", tenant: "Tenant", shared_rules: 
 
 
 def sync_existing_agent(tenant: "Tenant", shared_rules: str) -> str:
-    """Patch an already-provisioned site's existing LLM in place - add the
-    end_call tool and the current global rules if either is missing - then
-    publish the agent so the change actually goes live. No new agent/LLM is
+    """Patch an already-provisioned site's existing LLM in place - then
+    publish the agent so the change actually goes live. No new agent is
     created and no phone routing is touched, unlike Force re-provision.
+
+    Whenever the site still has a niche assigned, the desired prompt is
+    fully recomputed from the niche's CURRENT prompt_template + this
+    tenant's CURRENT variables + the CURRENT global rules, and compared
+    against what's actually live - so edits to a niche's own prompt content
+    (not just the global rules or end_call tool) get picked up too. Without
+    a niche assigned (rare - e.g. reverted to manual after provisioning),
+    falls back to only ensuring the global rules prefix and end_call tool
+    are present, since there's no niche baseline to recompute from.
 
     Returns a short human-readable status: "updated", "already up to date",
     or "skipped (not auto-provisioned)".
     """
     if not tenant.retell_llm_id or not tenant.retell_agent_id:
         return "skipped (not auto-provisioned)"
+
+    niche = tenant.niche_template
 
     with httpx.Client(timeout=30) as client:
         try:
@@ -210,17 +220,36 @@ def sync_existing_agent(tenant: "Tenant", shared_rules: str) -> str:
             raise ProvisioningError(f"Failed to fetch LLM {tenant.retell_llm_id}: {exc}") from exc
         current = resp.json()
 
-        current_prompt = current.get("general_prompt") or ""
+        current_prompt = (current.get("general_prompt") or "").strip()
         current_tools = current.get("general_tools") or []
+        has_end_call = any(t.get("type") == "end_call" for t in current_tools)
 
-        needs_rules = bool(shared_rules.strip()) and not current_prompt.strip().startswith(shared_rules.strip())
-        needs_end_call = not any(t.get("type") == "end_call" for t in current_tools)
+        if niche is not None:
+            # Recompute the full desired prompt fresh, exactly as a new
+            # provision would - catches niche content drift, not just
+            # missing global rules / missing tool.
+            variables = _template_variables(tenant, niche)
+            rendered_niche_prompt = render_template(niche.prompt_template, variables)
+            desired_prompt = (
+                f"{shared_rules.strip()}\n\n{rendered_niche_prompt}"
+                if shared_rules.strip()
+                else rendered_niche_prompt
+            ).strip()
 
-        if not needs_rules and not needs_end_call:
-            return "already up to date"
+            if current_prompt == desired_prompt and has_end_call:
+                return "already up to date"
 
-        new_prompt = f"{shared_rules.strip()}\n\n{current_prompt}" if needs_rules else current_prompt
-        new_tools = current_tools + [END_CALL_TOOL] if needs_end_call else current_tools
+            new_prompt = desired_prompt
+        else:
+            # No niche to recompute from (e.g. reverted to manual after
+            # provisioning) - best effort: just ensure the global rules
+            # prefix and end_call tool are present, unchanged otherwise.
+            needs_rules = bool(shared_rules.strip()) and not current_prompt.startswith(shared_rules.strip())
+            if not needs_rules and has_end_call:
+                return "already up to date"
+            new_prompt = f"{shared_rules.strip()}\n\n{current_prompt}" if needs_rules else current_prompt
+
+        new_tools = current_tools if has_end_call else current_tools + [END_CALL_TOOL]
 
         # Retell's published LLM versions are immutable - only a draft can be
         # edited, and (confirmed against a live account) publishing the agent

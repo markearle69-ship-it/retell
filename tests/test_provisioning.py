@@ -57,6 +57,7 @@ def test_import_number_already_exists_gives_actionable_message(monkeypatch):
 
 
 class _NicheStub:
+    id = 1
     name = "Test Niche"
     prompt_template = "Prompt for {{business_name}}, covering {{service_description}}: {{collect_list}}"
     begin_message_template = None
@@ -356,9 +357,22 @@ def test_create_retell_agent_without_shared_rules_is_unchanged(monkeypatch):
 
 
 class _TenantWithIdsStub:
-    def __init__(self, retell_llm_id="llm_existing", retell_agent_id="agent_existing"):
+    def __init__(
+        self,
+        retell_llm_id="llm_existing",
+        retell_agent_id="agent_existing",
+        niche_template=None,
+        business_name="Test Business",
+        location="Testville",
+        zip_codes="00000",
+    ):
         self.retell_llm_id = retell_llm_id
         self.retell_agent_id = retell_agent_id
+        self.niche_template = niche_template
+        self.niche_template_id = niche_template.id if niche_template is not None else None
+        self.business_name = business_name
+        self.location = location
+        self.zip_codes = zip_codes
 
 
 def test_sync_existing_agent_skips_non_provisioned_site():
@@ -366,7 +380,8 @@ def test_sync_existing_agent_skips_non_provisioned_site():
     assert provisioning.sync_existing_agent(tenant, "Some rule.") == "skipped (not auto-provisioned)"
 
 
-def test_sync_existing_agent_already_up_to_date(monkeypatch):
+def test_sync_existing_agent_already_up_to_date_without_niche(monkeypatch):
+    # No niche assigned - falls back to the narrow prefix/tool-presence check.
     class _Client(_FakeRetellClient):
         def get(self, url, headers=None):
             return _FakeResponse(
@@ -392,6 +407,82 @@ def test_sync_existing_agent_already_up_to_date(monkeypatch):
 
     assert status == "already up to date"
     assert calls["patch"] == 0
+
+
+def test_sync_existing_agent_already_up_to_date_with_niche(monkeypatch):
+    # Niche assigned, live prompt already matches a fresh render exactly -
+    # must not update just because it's re-checking every time.
+    niche = _NicheStub()
+    tenant = _TenantWithIdsStub(niche_template=niche)
+    variables = provisioning._template_variables(tenant, niche)
+    current_prompt = f"Some rule.\n\n{provisioning.render_template(niche.prompt_template, variables)}"
+
+    class _Client(_FakeRetellClient):
+        def get(self, url, headers=None):
+            return _FakeResponse(
+                200,
+                "ok",
+                json_data={"general_prompt": current_prompt, "general_tools": [provisioning.END_CALL_TOOL]},
+            )
+
+    calls = {"create": 0}
+
+    def _post(self, url, headers=None, json=None):
+        calls["create"] += 1
+        return _FakeResponse(200, "ok", json_data={"llm_id": "should_not_happen"})
+
+    monkeypatch.setattr(_Client, "post", _post, raising=False)
+    monkeypatch.setattr(provisioning.httpx, "Client", _Client)
+
+    status = provisioning.sync_existing_agent(tenant, "Some rule.")
+
+    assert status == "already up to date"
+    assert calls["create"] == 0
+
+
+def test_sync_existing_agent_detects_niche_content_drift_and_updates(monkeypatch):
+    # This is the scenario that motivated this: global rules + end_call are
+    # already present (so the old narrow check would say "up to date"), but
+    # the niche's OWN prompt content (e.g. a rewritten COVERAGE section) has
+    # since changed - that drift must still be detected and pushed live.
+    niche = _NicheStub()
+    niche.prompt_template = "Updated prompt for {{business_name}}: no longer rejects any zip code."
+    tenant = _TenantWithIdsStub(niche_template=niche)
+
+    captured = {}
+
+    class _Client(_FakeRetellClient):
+        def get(self, url, headers=None):
+            return _FakeResponse(
+                200,
+                "ok",
+                json_data={
+                    # Stale: old niche wording, but already has rules+tool.
+                    "general_prompt": "Some rule.\n\nOLD prompt: we don't cover certain zip codes.",
+                    "general_tools": [provisioning.END_CALL_TOOL],
+                },
+            )
+
+        def post(self, url, headers=None, json=None):
+            if url.endswith("/create-retell-llm"):
+                captured["new_prompt"] = json["general_prompt"]
+                return _FakeResponse(200, "ok", json_data={"llm_id": "llm_refreshed"})
+            return _FakeResponse(200, "ok")
+
+        def patch(self, url, headers=None, json=None):
+            captured["repoint_llm_id"] = json["response_engine"]["llm_id"]
+            return _FakeResponse(200, "ok")
+
+    monkeypatch.setattr(provisioning.httpx, "Client", _Client)
+
+    status = provisioning.sync_existing_agent(tenant, "Some rule.")
+
+    assert status == "updated"
+    assert "no longer rejects any zip code" in captured["new_prompt"]
+    assert "we don't cover certain zip codes" not in captured["new_prompt"]
+    assert captured["new_prompt"].startswith("Some rule.")
+    assert captured["repoint_llm_id"] == "llm_refreshed"
+    assert tenant.retell_llm_id == "llm_refreshed"
 
 
 def test_sync_existing_agent_creates_new_llm_and_repoints_agent_when_missing(monkeypatch):
