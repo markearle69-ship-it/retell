@@ -23,6 +23,17 @@ def test_login_wrong_password():
     assert "Incorrect password" in resp.text
 
 
+def test_login_fails_closed_when_admin_api_key_unset(monkeypatch):
+    # ADMIN_API_KEY must default to "" - if it's ever left unset in the real
+    # deployment, every check must reject rather than fall through to a
+    # known guessable default.
+    monkeypatch.setattr(settings, "admin_api_key", "")
+    anon = TestClient(app)
+    for attempted_password in ("", "change-me", "admin", "password"):
+        resp = anon.post("/admin/login", data={"password": attempted_password})
+        assert resp.status_code == 401
+
+
 def test_dashboard_prefers_configured_public_base_url(monkeypatch):
     monkeypatch.setattr(settings, "public_base_url", "https://example.up.railway.app")
     client = TestClient(app)

@@ -15,8 +15,11 @@ class Settings(BaseSettings):
     # Storage
     database_url: str = "sqlite:///./retell_leads.db"
 
-    # Admin API access (protects /tenants and /leads)
-    admin_api_key: str = "change-me"
+    # Admin API access (protects /tenants and /leads, the admin panel login,
+    # and session signing). Empty by default so every check that does
+    # `if not settings.admin_api_key or ...` fails CLOSED if this is ever
+    # left unset, rather than falling through to a guessable known default.
+    admin_api_key: str = ""
 
     # Email notifications. Preferred: Postmark's API (postmark_api_token set) -
     # only needs smtp_from for the sender address, everything else is ignored.
