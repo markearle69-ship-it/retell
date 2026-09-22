@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block body %}
+<div class="topbar">
+  <h1>{{ portfolio.name }}</h1>
+  <form class="inline" method="post" action="/portal/{{ portfolio.slug }}/logout">
+    <button class="secondary" type="submit">Log out</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Lead volume</h2>
+  <div class="stat-row">
+    <div class="stat-tile">
+      <div class="stat-label">Last 24 hours</div>
+      <div class="stat-value">{{ lead_volume.last_24h }}</div>
+    </div>
+    <div class="stat-tile">
+      <div class="stat-label">Last 7 days</div>
+      <div class="stat-value">{{ lead_volume.last_7d }}</div>
+    </div>
+    <div class="stat-tile">
+      <div class="stat-label">Last 30 days</div>
+      <div class="stat-value">{{ lead_volume.last_30d }}</div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Your sites ({{ tenants|length }})</h2>
+  <table>
+    <thead><tr><th>Site</th><th>Number</th><th>Leads</th></tr></thead>
+    <tbody>
+    {% for t in tenants %}
+      <tr>
+        <td>{{ t.business_name }}</td>
+        <td>{{ t.to_number }}</td>
+        <td>{{ lead_counts.get(t.id, 0) }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="3" class="muted">No sites assigned yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>Recent leads</h2>
+  <table>
+    <thead><tr><th>When</th><th>Site</th><th>Caller</th><th>Sentiment</th><th>Summary</th></tr></thead>
+    <tbody>
+    {% for lead in recent_leads %}
+      <tr>
+        <td>{{ lead.created_at.strftime("%Y-%m-%d %H:%M") }}</td>
+        <td>{{ lead.tenant.business_name if lead.tenant else "—" }}</td>
+        <td>{{ lead.from_number or "—" }}</td>
+        <td>{{ lead.user_sentiment or "—" }}</td>
+        <td><a href="/portal/{{ portfolio.slug }}/leads/{{ lead.id }}">{{ (lead.call_summary or "(no summary yet)")[:80] }}</a></td>
+      </tr>
+    {% else %}
+      <tr><td colspan="5" class="muted">No calls yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

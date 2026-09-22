@@ -36,6 +36,22 @@ class GlobalPromptConfig(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class Portfolio(Base):
+    """A group of sites rented out as a bundle to one local business owner
+    (e.g. "6 sites around Austin"), with its own password-protected,
+    read-only view at /portal/<slug> - separate from the admin login."""
+
+    __tablename__ = "portfolios"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+    slug = Column(String, unique=True, nullable=False, index=True)
+    password_hash = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    tenants = relationship("Tenant", back_populates="portfolio")
+
+
 class NicheTemplate(Base):
     """A reusable Retell agent prompt for a niche (e.g. Auto AC Repair), with
     {{business_name}}/{{location}}/{{zip_codes}} placeholders filled in per site."""
@@ -84,10 +100,15 @@ class Tenant(Base):
     provisioned_at = Column(DateTime, nullable=True)
     provisioning_error = Column(Text, nullable=True)
 
+    # Which rented-out bundle of sites this belongs to, if any (unassigned
+    # sites are admin-only, not visible in any tenant portal).
+    portfolio_id = Column(Integer, ForeignKey("portfolios.id"), nullable=True)
+
     created_at = Column(DateTime, default=datetime.utcnow)
 
     leads = relationship("Lead", back_populates="tenant")
     niche_template = relationship("NicheTemplate", back_populates="tenants")
+    portfolio = relationship("Portfolio", back_populates="tenants")
 
 
 class Lead(Base):

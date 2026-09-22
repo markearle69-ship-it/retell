@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block body %}
+<div class="topbar">
+  <h1>Portfolios</h1>
+  <a href="/admin">&larr; Back to sites</a>
+</div>
+
+<div class="card">
+  <h2>{% if edit_portfolio %}Edit "{{ edit_portfolio.name }}"{% else %}Add a portfolio{% endif %}</h2>
+  <p class="muted">
+    A portfolio groups sites together for one local business owner (e.g. "6 sites around Austin"),
+    with its own password-protected, read-only link — separate from your admin login, and showing
+    only that portfolio's sites and leads. Assign sites to a portfolio from each site's edit form
+    on the main dashboard.
+  </p>
+  <form method="post" action="/admin/portfolios" class="form-grid">
+    {% if edit_portfolio %}<input type="hidden" name="portfolio_id" value="{{ edit_portfolio.id }}" />{% endif %}
+    <div>
+      <label>Portfolio name</label>
+      <input name="name" required value="{{ edit_portfolio.name if edit_portfolio else '' }}" placeholder="Austin Portfolio" />
+    </div>
+    <div>
+      <label>URL slug {% if edit_portfolio %}(changing this changes the link){% else %}(optional, auto-generated){% endif %}</label>
+      <input name="slug" value="{{ edit_portfolio.slug if edit_portfolio else '' }}" placeholder="austin-portfolio" />
+    </div>
+    <div>
+      <label>{% if edit_portfolio %}New password (leave blank to keep current){% else %}Password (leave blank to auto-generate){% endif %}</label>
+      <input name="password" type="text" placeholder="{% if edit_portfolio %}unchanged{% else %}auto-generated{% endif %}" />
+    </div>
+    <div>
+      <button type="submit">{% if edit_portfolio %}Save changes{% else %}Add portfolio{% endif %}</button>
+      {% if edit_portfolio %}<a href="/admin/portfolios" class="muted" style="margin-left:0.5rem;">Cancel</a>{% endif %}
+    </div>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Existing portfolios ({{ portfolios|length }})</h2>
+  <table>
+    <thead><tr><th>Name</th><th>Sites</th><th>Portal link</th><th></th></tr></thead>
+    <tbody>
+    {% for p in portfolios %}
+      <tr>
+        <td>{{ p.name }}</td>
+        <td>{{ tenant_counts.get(p.id, 0) }}</td>
+        <td><code class="url" style="display:inline; padding: 0.2rem 0.4rem;">{{ portal_base_url }}/portal/{{ p.slug }}</code></td>
+        <td>
+          <div class="row-actions">
+            <a href="/admin/portfolios?edit_id={{ p.id }}">Edit</a>
+            <form class="inline" method="post" action="/admin/portfolios/{{ p.id }}/delete"
+                  onsubmit="return confirm('Remove portfolio {{ p.name }}? Its sites become unassigned, not deleted.');">
+              <button class="link danger" type="submit">Delete</button>
+            </form>
+          </div>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="4" class="muted">No portfolios yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

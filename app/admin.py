@@ -1,4 +1,6 @@
 import os
+import re
+import secrets
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -11,6 +13,7 @@ from sqlalchemy.orm import Session
 from . import models, provisioning
 from .config import settings
 from .db import get_db
+from .passwords import hash_password
 from .provisioning import ProvisioningError, provision_site
 from .session import (
     SESSION_COOKIE_NAME,
@@ -23,6 +26,10 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 _TEMPLATES_DIR = os.path.join(os.path.dirname(__file__), "templates")
 templates = Jinja2Templates(directory=_TEMPLATES_DIR)
+
+
+def _slugify(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-") or "portfolio"
 
 
 class NotAuthenticated(Exception):
@@ -107,6 +114,7 @@ def _dashboard_context(request: Request, db: Session, edit_id: Optional[int], pr
         edit_tenant = db.query(models.Tenant).filter(models.Tenant.id == edit_id).first()
 
     niches = db.query(models.NicheTemplate).order_by(models.NicheTemplate.name).all()
+    portfolios = db.query(models.Portfolio).order_by(models.Portfolio.name).all()
 
     return {
         "tenants": tenants,
@@ -115,6 +123,7 @@ def _dashboard_context(request: Request, db: Session, edit_id: Optional[int], pr
         "lead_volume": lead_volume,
         "edit_tenant": edit_tenant,
         "niches": niches,
+        "portfolios": portfolios,
         "webhook_url": _public_webhook_url(request),
         "provision_error": provision_error,
     }
@@ -138,11 +147,13 @@ def upsert_tenant(
     location: Optional[str] = Form(None),
     zip_codes: Optional[str] = Form(None),
     niche_id: Optional[str] = Form(None),
+    portfolio_id: Optional[str] = Form(None),
     force_reprovision: Optional[str] = Form(None),
     db: Session = Depends(get_db),
 ):
     to_number = to_number.strip()
     niche_id_int = int(niche_id) if niche_id else None
+    portfolio_id_int = int(portfolio_id) if portfolio_id else None
 
     tenant = None
     if tenant_id:
@@ -159,6 +170,7 @@ def upsert_tenant(
     tenant.notify_sms_number = (notify_sms_number or "").strip() or None
     tenant.location = (location or "").strip() or None
     tenant.zip_codes = (zip_codes or "").strip() or None
+    tenant.portfolio_id = portfolio_id_int
 
     if niche_id_int:
         niche = db.query(models.NicheTemplate).filter(models.NicheTemplate.id == niche_id_int).first()
@@ -340,3 +352,85 @@ def delete_niche(niche_id: int, db: Session = Depends(get_db)):
         db.delete(niche)
         db.commit()
     return RedirectResponse(url="/admin/niches", status_code=303)
+
+
+def _portal_base_url(request: Request) -> str:
+    hook = _public_webhook_url(request)
+    return hook.rsplit("/webhooks/retell", 1)[0]
+
+
+@router.get("/portfolios", response_class=HTMLResponse, dependencies=[Depends(require_admin_session)])
+def list_portfolios(request: Request, edit_id: Optional[int] = None, db: Session = Depends(get_db)):
+    portfolios = db.query(models.Portfolio).order_by(models.Portfolio.name).all()
+    edit_portfolio = None
+    if edit_id is not None:
+        edit_portfolio = db.query(models.Portfolio).filter(models.Portfolio.id == edit_id).first()
+
+    count_rows = (
+        db.query(models.Tenant.portfolio_id, func.count(models.Tenant.id))
+        .filter(models.Tenant.portfolio_id.isnot(None))
+        .group_by(models.Tenant.portfolio_id)
+        .all()
+    )
+    tenant_counts = {pid: count for pid, count in count_rows}
+
+    return templates.TemplateResponse(
+        request,
+        "portfolios.html",
+        {
+            "portfolios": portfolios,
+            "edit_portfolio": edit_portfolio,
+            "tenant_counts": tenant_counts,
+            "portal_base_url": _portal_base_url(request),
+        },
+    )
+
+
+@router.post("/portfolios", dependencies=[Depends(require_admin_session)])
+def upsert_portfolio(
+    portfolio_id: Optional[int] = Form(None),
+    name: str = Form(...),
+    slug: Optional[str] = Form(None),
+    password: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+):
+    portfolio = None
+    if portfolio_id:
+        portfolio = db.query(models.Portfolio).filter(models.Portfolio.id == portfolio_id).first()
+
+    if portfolio is None:
+        final_slug = (slug or "").strip() or _slugify(name)
+        if db.query(models.Portfolio).filter(models.Portfolio.slug == final_slug).first():
+            final_slug = f"{final_slug}-{secrets.token_hex(2)}"
+        # A password is required to create a portfolio; generate one if left
+        # blank so there's never a portfolio with no way to log in.
+        initial_password = password or secrets.token_urlsafe(9)
+        portfolio = models.Portfolio(slug=final_slug, password_hash=hash_password(initial_password))
+        db.add(portfolio)
+    else:
+        if slug and slug.strip():
+            new_slug = slug.strip()
+            if new_slug != portfolio.slug and db.query(models.Portfolio).filter(
+                models.Portfolio.slug == new_slug, models.Portfolio.id != portfolio.id
+            ).first():
+                new_slug = f"{new_slug}-{secrets.token_hex(2)}"
+            portfolio.slug = new_slug
+        if password:
+            portfolio.password_hash = hash_password(password)
+
+    portfolio.name = name.strip()
+
+    db.commit()
+    return RedirectResponse(url="/admin/portfolios", status_code=303)
+
+
+@router.post("/portfolios/{portfolio_id}/delete", dependencies=[Depends(require_admin_session)])
+def delete_portfolio(portfolio_id: int, db: Session = Depends(get_db)):
+    portfolio = db.query(models.Portfolio).filter(models.Portfolio.id == portfolio_id).first()
+    if portfolio is not None:
+        db.query(models.Tenant).filter(models.Tenant.portfolio_id == portfolio_id).update(
+            {"portfolio_id": None}
+        )
+        db.delete(portfolio)
+        db.commit()
+    return RedirectResponse(url="/admin/portfolios", status_code=303)

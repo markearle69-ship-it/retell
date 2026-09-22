@@ -4,6 +4,7 @@
   <h1>Retell Lead Router</h1>
   <div>
     <a href="/admin/niches" class="muted" style="margin-right: 1rem;">Niche templates</a>
+    <a href="/admin/portfolios" class="muted" style="margin-right: 1rem;">Portfolios</a>
     <form class="inline" method="post" action="/admin/logout"><button class="secondary" type="submit">Log out</button></form>
   </div>
 </div>
@@ -71,6 +72,15 @@
         {% endfor %}
       </select>
     </div>
+    <div>
+      <label>Portfolio (optional)</label>
+      <select name="portfolio_id">
+        <option value="">&mdash; none &mdash;</option>
+        {% for p in portfolios %}
+          <option value="{{ p.id }}" {% if edit_tenant and edit_tenant.portfolio_id == p.id %}selected{% endif %}>{{ p.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
     {% if edit_tenant and (edit_tenant.provisioned_at or edit_tenant.retell_agent_id or edit_tenant.twilio_number_sid) %}
     <div>
       <label><input type="checkbox" name="force_reprovision" value="1" style="width:auto; padding:0;" /> Force re-provision</label>
@@ -91,13 +101,14 @@
   <h2>Sites ({{ tenants|length }})</h2>
   <table>
     <thead>
-      <tr><th>Agent / site</th><th>Twilio number</th><th>Forward SMS</th><th>Email</th><th>Leads</th><th>Provisioning</th><th></th></tr>
+      <tr><th>Agent / site</th><th>Twilio number</th><th>Portfolio</th><th>Forward SMS</th><th>Email</th><th>Leads</th><th>Provisioning</th><th></th></tr>
     </thead>
     <tbody>
     {% for t in tenants %}
       <tr>
         <td>{{ t.business_name }}</td>
         <td>{{ t.to_number }}</td>
+        <td>{{ t.portfolio.name if t.portfolio else "—" }}</td>
         <td>{{ t.notify_sms_number or "—" }}</td>
         <td>{{ t.notify_email or "—" }}</td>
         <td>{{ lead_counts.get(t.id, 0) }}</td>
@@ -128,7 +139,7 @@
         </td>
       </tr>
     {% else %}
-      <tr><td colspan="7" class="muted">No sites yet &mdash; add one above.</td></tr>
+      <tr><td colspan="8" class="muted">No sites yet &mdash; add one above.</td></tr>
     {% endfor %}
     </tbody>
   </table>

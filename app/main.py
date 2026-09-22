@@ -6,11 +6,12 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
-from . import admin, models, notify, schemas
+from . import admin, models, notify, portal, schemas
 from .admin import NotAuthenticated
 from .config import settings
 from .db import Base, engine, get_db
 from .migrations import run_additive_migrations
+from .portal import PortfolioNotAuthenticated
 from .signature import verify_retell_signature
 
 logging.basicConfig(level=logging.INFO)
@@ -21,11 +22,19 @@ run_additive_migrations(engine)
 
 app = FastAPI(title="Retell Lead Router")
 app.include_router(admin.router)
+app.include_router(portal.router)
 
 
 @app.exception_handler(NotAuthenticated)
 async def not_authenticated_handler(request: Request, exc: NotAuthenticated) -> RedirectResponse:
     return RedirectResponse(url="/admin/login", status_code=303)
+
+
+@app.exception_handler(PortfolioNotAuthenticated)
+async def portfolio_not_authenticated_handler(
+    request: Request, exc: PortfolioNotAuthenticated
+) -> RedirectResponse:
+    return RedirectResponse(url=f"/portal/{exc.slug}/login", status_code=303)
 
 
 def require_admin(x_admin_key: str = Header(default="")) -> None:

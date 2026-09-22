@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from app.config import settings
 from app.db import SessionLocal
 from app.main import app
-from app.models import Lead
+from app.models import Lead, Portfolio, Tenant
 
 
 def test_dashboard_requires_login():
@@ -165,3 +165,147 @@ def test_lead_volume_stat_tiles():
     assert f'<div class="stat-value">{before["last_24h"]}</div>' in resp.text
     assert f'<div class="stat-value">{before["last_7d"]}</div>' in resp.text
     assert f'<div class="stat-value">{before["last_30d"]}</div>' in resp.text
+
+
+def test_create_portfolio_via_panel_generates_slug_and_password():
+    client = TestClient(app)
+    client.post("/admin/login", data={"password": settings.admin_api_key}, follow_redirects=False)
+
+    resp = client.post(
+        "/admin/portfolios",
+        data={"name": "Austin Admin Test Portfolio"},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+
+    resp = client.get("/admin/portfolios")
+    assert resp.status_code == 200
+    assert "Austin Admin Test Portfolio" in resp.text
+
+    db = SessionLocal()
+    portfolio = db.query(Portfolio).filter(Portfolio.name == "Austin Admin Test Portfolio").first()
+    assert portfolio is not None
+    assert portfolio.slug  # auto-generated, non-empty
+    assert portfolio.password_hash  # auto-generated password was hashed and stored
+    db.close()
+
+
+def test_create_portfolio_with_duplicate_slug_gets_suffixed():
+    client = TestClient(app)
+    client.post("/admin/login", data={"password": settings.admin_api_key}, follow_redirects=False)
+
+    client.post(
+        "/admin/portfolios",
+        data={"name": "Dup Slug One", "slug": "dup-slug-test", "password": "hunter2"},
+        follow_redirects=False,
+    )
+    client.post(
+        "/admin/portfolios",
+        data={"name": "Dup Slug Two", "slug": "dup-slug-test", "password": "hunter3"},
+        follow_redirects=False,
+    )
+
+    db = SessionLocal()
+    slugs = [
+        p.slug
+        for p in db.query(Portfolio).filter(Portfolio.name.in_(["Dup Slug One", "Dup Slug Two"])).all()
+    ]
+    db.close()
+    assert len(slugs) == 2
+    assert len(set(slugs)) == 2  # both rows got distinct slugs, no collision
+
+
+def test_edit_portfolio_rename_and_password_change():
+    client = TestClient(app)
+    client.post("/admin/login", data={"password": settings.admin_api_key}, follow_redirects=False)
+
+    client.post(
+        "/admin/portfolios",
+        data={"name": "Edit Me Portfolio", "slug": "edit-me-test", "password": "original-pw"},
+        follow_redirects=False,
+    )
+    db = SessionLocal()
+    portfolio = db.query(Portfolio).filter(Portfolio.slug == "edit-me-test").first()
+    portfolio_id = portfolio.id
+    original_hash = portfolio.password_hash
+    db.close()
+
+    resp = client.post(
+        "/admin/portfolios",
+        data={"portfolio_id": portfolio_id, "name": "Renamed Portfolio", "slug": "edit-me-test"},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+
+    db = SessionLocal()
+    portfolio = db.query(Portfolio).filter(Portfolio.id == portfolio_id).first()
+    assert portfolio.name == "Renamed Portfolio"
+    assert portfolio.password_hash == original_hash  # blank password left it unchanged
+    db.close()
+
+
+def test_delete_portfolio_unassigns_its_sites_without_deleting_them():
+    client = TestClient(app)
+    client.post("/admin/login", data={"password": settings.admin_api_key}, follow_redirects=False)
+
+    client.post(
+        "/admin/portfolios",
+        data={"name": "Deletable Portfolio", "slug": "deletable-test", "password": "hunter2"},
+        follow_redirects=False,
+    )
+    db = SessionLocal()
+    portfolio = db.query(Portfolio).filter(Portfolio.slug == "deletable-test").first()
+    portfolio_id = portfolio.id
+    tenant = Tenant(business_name="Site In Deletable Portfolio", to_number="+15558880001", portfolio_id=portfolio_id)
+    db.add(tenant)
+    db.commit()
+    tenant_id = tenant.id
+    db.close()
+
+    resp = client.post(f"/admin/portfolios/{portfolio_id}/delete", follow_redirects=False)
+    assert resp.status_code == 303
+
+    db = SessionLocal()
+    assert db.query(Portfolio).filter(Portfolio.id == portfolio_id).first() is None
+    surviving_tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+    assert surviving_tenant is not None
+    assert surviving_tenant.portfolio_id is None
+    db.close()
+
+
+def test_assign_tenant_to_portfolio_via_dashboard_form():
+    client = TestClient(app)
+    client.post("/admin/login", data={"password": settings.admin_api_key}, follow_redirects=False)
+
+    client.post(
+        "/admin/portfolios",
+        data={"name": "Assignment Test Portfolio", "slug": "assignment-test", "password": "hunter2"},
+        follow_redirects=False,
+    )
+    db = SessionLocal()
+    portfolio_id = db.query(Portfolio).filter(Portfolio.slug == "assignment-test").first().id
+    db.close()
+
+    resp = client.post(
+        "/admin/tenants",
+        data={
+            "business_name": "Portfolio Assigned Site",
+            "to_number": "+15558880002",
+            "notify_email": "",
+            "notify_sms_number": "",
+            "location": "",
+            "zip_codes": "",
+            "niche_id": "",
+            "portfolio_id": str(portfolio_id),
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+
+    db = SessionLocal()
+    tenant = db.query(Tenant).filter(Tenant.business_name == "Portfolio Assigned Site").first()
+    assert tenant.portfolio_id == portfolio_id
+    db.close()
+
+    resp = client.get("/admin")
+    assert "Assignment Test Portfolio" in resp.text
