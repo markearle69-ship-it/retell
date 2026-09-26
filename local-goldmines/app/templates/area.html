@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+{% block title %}{{ area.name }} · Local Goldmines{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="/static/leaflet/leaflet.css">
+<script src="/static/leaflet/leaflet.js"></script>
+<style>
+  #map { height: 520px; border-radius: 12px; border: 1px solid var(--line); }
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.25rem; }
+  .sector-head { display: flex; align-items: baseline; justify-content: space-between; margin: 1.25rem 0 0.4rem; }
+  .sector-head h3 { margin: 0; font-size: 1rem; }
+  .sector-badge { display: inline-block; min-width: 2.4rem; text-align: center; padding: 0.1rem 0.45rem; border-radius: 6px; background: var(--gold-soft); color: var(--text); font-weight: 700; font-size: 0.8rem; margin-right: 0.4rem; }
+  .bar { position: relative; height: 8px; width: 90px; border-radius: 4px; background: var(--line); display: inline-block; vertical-align: middle; margin-right: 0.4rem; }
+  .bar > i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; background: var(--gold); }
+  tr.picked td { background: var(--gold-soft); }
+  .pick-count { font-weight: 700; }
+  .savebar { position: sticky; bottom: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 0.75rem 1rem; display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; margin-top: 1rem; box-shadow: 0 -4px 16px rgba(0,0,0,0.06); }
+  .star { color: var(--gold); font-weight: 700; }
+  .tag { font-size: 0.72rem; color: var(--muted); }
+  .sector-label { font: 700 13px Inter, sans-serif; color: #1f3a5f; text-shadow: 0 0 3px #fff, 0 0 3px #fff; }
+  table.picks { table-layout: fixed; min-width: 860px; }
+  .empty { color: var(--muted); font-size: 0.85rem; padding: 0.4rem 0; }
+</style>
+{% endblock %}
+{% block body %}
+<div class="crumbs">
+  <a href="/">Projects</a> ›
+  {% if area.parent %}<a href="/areas/{{ area.parent.id }}">{{ area.parent.name }}</a> › {% endif %}
+  {{ area.name }}
+</div>
+<h1>{{ project.niche|title }} · {{ area.name }}</h1>
+<p class="muted">
+  {% if area.level == 0 %}Hub city. Pick the towns that will each get their own site.{% else %}Town site. Pick the mini suburbs this site's pages will target.{% endif %}
+  {{ area.radius_miles|round(1) }} mile radius · {{ area.candidates|length }} places found
+</p>
+<div class="steps">
+  <span class="step on">1 · Areas</span>
+  <span class="step">2 · Sub-services (next)</span>
+  <span class="step">3 · Competition (next)</span>
+  <a class="step" href="/projects/{{ project.id }}/coverage">Coverage map →</a>
+</div>
+
+{% if area.research_error %}<div class="alert error">{{ area.research_error }}</div>{% endif %}
+{% if saved %}<div class="alert ok">Saved. Your picks are recorded for the future auto-picker.</div>{% endif %}
+
+<div class="card">
+  <form method="post" action="/areas/{{ area.id }}/research" class="form-grid">
+    <div><label>Radius (miles)</label><input name="radius_miles" type="number" step="0.5" min="1" max="50" value="{{ area.radius_miles }}"></div>
+    <div><label>Min population</label><input name="min_population" type="number" min="0" step="500" value="{{ area.min_population }}"></div>
+    <div><button class="secondary" type="submit">Re-run</button></div>
+  </form>
+</div>
+
+<div id="map"></div>
+
+<form method="post" action="/areas/{{ area.id }}/selection" id="pick-form">
+{% for sector in sectors %}
+  {% set rows = groups[sector] %}
+  <div class="sector-head">
+    <h3><span class="sector-badge">{{ sector }}</span>{{ rows|length }} place{{ '' if rows|length == 1 else 's' }}</h3>
+  </div>
+  {% if rows %}
+  <div class="card" style="padding: 0.25rem 0.75rem; margin-bottom: 0.5rem;"><div class="table-wrap"><table class="picks">
+    <colgroup><col style="width:2.5rem"><col><col style="width:4.5rem"><col style="width:7rem"><col style="width:11rem"><col style="width:10rem"><col style="width:9rem"><col style="width:9.5rem"></colgroup>
+    <thead><tr>
+      <th></th><th>Place</th><th class="num">Miles</th><th class="num">Population</th>
+      <th class="num">{{ 'Avg household income' if project.country == 'GB' else 'Median household income' }}</th>
+      <th class="num">{{ 'Median house price' if project.country == 'GB' else 'Median home value' }}</th>
+      <th>Affluence</th><th></th>
+    </tr></thead>
+    <tbody>
+    {% for c in rows %}
+      <tr class="{{ 'picked' if c.selected }}" data-id="{{ c.id }}">
+        <td><input type="checkbox" name="candidate_ids" value="{{ c.id }}" {{ 'checked' if c.selected }} data-id="{{ c.id }}"></td>
+        <td>
+          {% if loop.first and c.affluence_score is not none %}<span class="star" title="Most affluent in this slice">★</span>{% endif %}
+          {{ c.name }} <span class="tag">{{ c.place_type or '' }}</span>
+        </td>
+        <td class="num">{{ c.distance_miles }}</td>
+        <td class="num" title="{{ c.population_source or 'unknown' }}">
+          {{ "{:,}".format(c.population) if c.population else '—' }}{% if c.population_source and 'approx' in c.population_source %}*{% endif %}
+        </td>
+        <td class="num">{{ currency ~ "{:,}".format(c.income) if c.income else '—' }}</td>
+        <td class="num">{{ currency ~ "{:,}".format(c.house_price) if c.house_price else '—' }}</td>
+        <td style="white-space:nowrap">
+          {% if c.affluence_score is not none %}<span class="bar"><i style="width: {{ c.affluence_score }}%"></i></span>{{ c.affluence_score|round|int }}{% else %}<span class="muted">—</span>{% endif %}
+        </td>
+        <td style="white-space:nowrap; text-align:right">
+          {% if area.level == 0 %}
+            {% if c.name in drilled %}
+              <a href="/areas/{{ drilled[c.name].id }}">Suburbs ({{ drilled[c.name].selected|length }}) →</a>
+            {% else %}
+              <button class="link" formaction="/candidates/{{ c.id }}/drill" formmethod="post" title="Map the {{ drill_radius|int }}-mile area around {{ c.name }}">Find suburbs →</button>
+            {% endif %}
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div></div>
+  {% else %}
+  <div class="empty">Nothing found in this slice (sea, countryside or outside the radius).</div>
+  {% endif %}
+{% endfor %}
+
+  <p class="muted">* Population estimated from surrounding neighbourhoods where no official town figure was available. Affluence is scored 0–100 against the other places on this map (income 60%, house prices 40%).</p>
+
+  <div class="savebar">
+    <div><span class="pick-count" id="pick-count">0</span> picked <span class="muted">· aim for 6–8</span></div>
+    <button type="submit">Save picks</button>
+  </div>
+</form>
+
+<script>
+const data = {{ payload|tojson }};
+const map = L.map('map', { scrollWheelZoom: false });
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 18, attribution: '&copy; OpenStreetMap contributors'
+}).addTo(map);
+
+const c = [data.centre.lat, data.centre.lng];
+const radiusM = data.radius_miles * 1609.34;
+map.setView(c, 11);
+const ring = L.circle(c, { radius: radiusM, color: '#1f3a5f', weight: 1.5, fillOpacity: 0.03 }).addTo(map);
+map.fitBounds(ring.getBounds(), { padding: [10, 10] });
+L.circleMarker(c, { radius: 7, color: '#1f3a5f', fillColor: '#1f3a5f', fillOpacity: 1 }).addTo(map).bindTooltip(data.centre.name);
+
+function destination(lat, lng, bearingDeg, metres) {
+  const R = 6371000, b = bearingDeg * Math.PI / 180, p1 = lat * Math.PI / 180, l1 = lng * Math.PI / 180, d = metres / R;
+  const p2 = Math.asin(Math.sin(p1) * Math.cos(d) + Math.cos(p1) * Math.sin(d) * Math.cos(b));
+  const l2 = l1 + Math.atan2(Math.sin(b) * Math.sin(d) * Math.cos(p1), Math.cos(d) - Math.sin(p1) * Math.sin(p2));
+  return [p2 * 180 / Math.PI, l2 * 180 / Math.PI];
+}
+// Slice boundaries sit halfway between compass points.
+for (let i = 0; i < 8; i++) {
+  L.polyline([c, destination(c[0], c[1], 22.5 + i * 45, radiusM)], { color: '#1f3a5f', weight: 1, opacity: 0.45, dashArray: '4 4' }).addTo(map);
+}
+['N','NE','E','SE','S','SW','W','NW'].forEach((s, i) => {
+  L.marker(destination(c[0], c[1], i * 45, radiusM * 1.07), {
+    icon: L.divIcon({ className: 'sector-label', html: s, iconSize: [30, 16], iconAnchor: [15, 8] }), interactive: false
+  }).addTo(map);
+});
+
+function colourFor(score) {
+  if (score === null) return '#9c9a94';
+  // Pale to deep gold as affluence rises.
+  const t = score / 100;
+  const from = [233, 223, 196], to = [168, 116, 0];
+  return 'rgb(' + from.map((f, i) => Math.round(f + (to[i] - f) * t)).join(',') + ')';
+}
+
+const markers = {};
+const boxes = {};
+document.querySelectorAll('input[name=candidate_ids]').forEach(b => boxes[b.dataset.id] = b);
+
+function styleFor(p, picked) {
+  return { radius: picked ? 9 : 6, color: picked ? '#1c1b19' : '#ffffff', weight: picked ? 2.5 : 1, fillColor: colourFor(p.score), fillOpacity: 0.95 };
+}
+function refresh() {
+  let n = 0;
+  data.candidates.forEach(p => {
+    const box = boxes[p.id]; if (!box) return;
+    const picked = box.checked; if (picked) n++;
+    markers[p.id].setStyle(styleFor(p, picked));
+    box.closest('tr').classList.toggle('picked', picked);
+  });
+  document.getElementById('pick-count').textContent = n;
+}
+data.candidates.forEach(p => {
+  const m = L.circleMarker([p.lat, p.lng], styleFor(p, p.selected)).addTo(map);
+  m.bindTooltip(p.name + ' · ' + p.sector + (p.score !== null ? ' · affluence ' + Math.round(p.score) : ''));
+  m.on('click', () => { const b = boxes[p.id]; if (b) { b.checked = !b.checked; refresh(); } });
+  markers[p.id] = m;
+});
+Object.values(boxes).forEach(b => b.addEventListener('change', refresh));
+refresh();
+</script>
+{% endblock %}

@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Coverage · {{ project.name }}{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="/static/leaflet/leaflet.css">
+<script src="/static/leaflet/leaflet.js"></script>
+<style>
+  #map { height: 600px; border-radius: 12px; border: 1px solid var(--line); }
+  .stats { display: flex; gap: 2.5rem; flex-wrap: wrap; margin: 1rem 0 1.25rem; }
+  .stat .v { font-size: 1.9rem; font-weight: 700; letter-spacing: -0.02em; }
+  .stat .l { font-size: 0.8rem; color: var(--muted); }
+  .sites { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 0.75rem; margin-top: 1.25rem; }
+  .site { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 0.8rem 1rem; }
+  .site h3 { margin: 0 0 0.3rem; font-size: 0.95rem; }
+  .site .kind { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--gold); font-weight: 700; }
+</style>
+{% endblock %}
+{% block body %}
+<div class="crumbs"><a href="/">Projects</a> › {% if project.hub %}<a href="/areas/{{ project.hub.id }}">{{ project.hub.name }}</a> › {% endif %}Coverage</div>
+<h1>{{ project.niche|title }} coverage around {{ project.hub.name if project.hub else '' }}</h1>
+<p class="muted">Every site in this plan and the ground each one covers. Overlaps are intentional.</p>
+
+<div class="stats">
+  <div class="stat"><div class="v">{{ sites|length }}</div><div class="l">websites</div></div>
+  <div class="stat"><div class="v">{{ locations }}</div><div class="l">locations targeted</div></div>
+  <div class="stat"><div class="v">{{ (reach * 2)|round|int }} mi</div><div class="l">coverage across ({{ reach|round|int }} mi each way)</div></div>
+</div>
+
+<div id="map"></div>
+
+<div class="sites">
+{% for s in sites %}
+  <div class="site">
+    <div class="kind">{{ 'Hub site' if s.kind == 'hub' else 'Town site' }}</div>
+    <h3>{{ s.name }}</h3>
+    <div class="muted">{% if s.suburbs %}{{ s.suburbs|join(', ') }}{% else %}No {{ 'towns' if s.kind == 'hub' else 'suburbs' }} picked yet{% endif %}</div>
+  </div>
+{% endfor %}
+</div>
+
+<script>
+const sites = {{ sites|tojson }};
+const reachMiles = {{ reach }};
+const map = L.map('map', { scrollWheelZoom: false });
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18, attribution: '&copy; OpenStreetMap contributors' }).addTo(map);
+if (sites.length) {
+  const hub = sites[0];
+  map.setView([hub.lat, hub.lng], 10);
+  const outer = L.circle([hub.lat, hub.lng], { radius: reachMiles * 1609.34, color: '#b8860b', weight: 2, dashArray: '6 6', fillOpacity: 0.02 }).addTo(map);
+  map.fitBounds(outer.getBounds(), { padding: [10, 10] });
+  sites.forEach(s => {
+    const isHub = s.kind === 'hub';
+    L.circle([s.lat, s.lng], { radius: s.radius * 1609.34, color: isHub ? '#1f3a5f' : '#b8860b', weight: 1.5, fillColor: isHub ? '#1f3a5f' : '#e0b44c', fillOpacity: isHub ? 0.05 : 0.14 }).addTo(map);
+    L.circleMarker([s.lat, s.lng], { radius: isHub ? 8 : 6, color: '#fff', weight: 1.5, fillColor: isHub ? '#1f3a5f' : '#a87400', fillOpacity: 1 })
+      .addTo(map).bindTooltip(s.name + (s.suburbs.length ? ' · ' + s.suburbs.length + (isHub ? ' towns' : ' suburbs') : ''));
+  });
+} else {
+  map.setView([54, -2], 5);
+}
+</script>
+{% endblock %}

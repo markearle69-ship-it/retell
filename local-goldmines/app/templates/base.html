@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>{% block title %}Local Goldmines{% endblock %}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f6f5f2; --surface: #ffffff; --text: #1c1b19; --muted: #6b6860; --line: #e6e3dc;
+    --gold: #b8860b; --gold-soft: #f6ecd2; --accent: #1f3a5f; --accent-text: #ffffff;
+    --green: #1e7b45; --amber: #b7791f; --red: #b83a2e; --danger: #b83a2e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #131416; --surface: #1c1d20; --text: #ecebe8; --muted: #9c9a94; --line: #2d2f33;
+      --gold: #e0b44c; --gold-soft: #3a3020; --accent: #7fa6d6; --accent-text: #0e1116;
+      --green: #4cc47e; --amber: #e2a94a; --red: #ea7466; --danger: #ea7466;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { font-family: Inter, -apple-system, "Segoe UI", sans-serif; margin: 0; background: var(--bg); color: var(--text); font-size: 15px; }
+  header.top { display: flex; justify-content: space-between; align-items: center; padding: 0.9rem 1.5rem; border-bottom: 1px solid var(--line); background: var(--surface); }
+  .brand { font-weight: 700; font-size: 1.1rem; text-decoration: none; color: var(--text); letter-spacing: -0.01em; }
+  .brand span { color: var(--gold); }
+  main { max-width: 1200px; margin: 0 auto; padding: 1.5rem 1rem 4rem; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 1.25rem 1.5rem; margin-bottom: 1.25rem; }
+  h1 { font-size: 1.5rem; margin: 0 0 0.25rem; letter-spacing: -0.02em; }
+  h2 { font-size: 1.1rem; margin: 0 0 0.75rem; }
+  .muted { color: var(--muted); font-size: 0.88rem; }
+  a { color: var(--accent); }
+  table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+  th, td { text-align: left; padding: 0.5rem 0.55rem; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  th { font-weight: 600; color: var(--muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  input, select, button { font: inherit; padding: 0.5rem 0.65rem; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--text); }
+  input[type="checkbox"] { width: 1.05rem; height: 1.05rem; accent-color: var(--gold); }
+  button, .btn { background: var(--accent); color: var(--accent-text); border: none; cursor: pointer; font-weight: 600; text-decoration: none; display: inline-block; }
+  button.secondary, .btn.secondary { background: transparent; color: var(--accent); border: 1px solid var(--line); }
+  button.link { background: none; color: var(--accent); padding: 0; font-weight: 500; text-decoration: underline; }
+  button.link.danger { color: var(--danger); }
+  .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 0.8rem; align-items: end; }
+  .form-grid label { display: block; font-size: 0.78rem; color: var(--muted); margin-bottom: 0.3rem; font-weight: 500; }
+  .form-grid input, .form-grid select { width: 100%; }
+  .alert { padding: 0.75rem 1rem; border-radius: 8px; margin-bottom: 1rem; border: 1px solid; }
+  .alert.error { border-color: var(--red); color: var(--red); }
+  .alert.ok { border-color: var(--green); color: var(--green); }
+  .crumbs { font-size: 0.85rem; margin-bottom: 0.5rem; color: var(--muted); }
+  .crumbs a { color: var(--muted); }
+  .steps { display: flex; gap: 0.5rem; margin: 0.75rem 0 1.25rem; flex-wrap: wrap; }
+  .step { padding: 0.35rem 0.8rem; border-radius: 999px; font-size: 0.8rem; font-weight: 600; border: 1px solid var(--line); color: var(--muted); }
+  .step.on { background: var(--gold-soft); border-color: var(--gold); color: var(--text); }
+  .table-wrap { overflow-x: auto; }
+</style>
+{% block head %}{% endblock %}
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="/">Local <span>Goldmines</span></a>
+  {% block header_right %}
+  <form method="post" action="/logout"><button class="link">Log out</button></form>
+  {% endblock %}
+</header>
+<main>
+{% block body %}{% endblock %}
+</main>
+</body>
+</html>

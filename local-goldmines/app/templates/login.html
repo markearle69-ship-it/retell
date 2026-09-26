@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block header_right %}{% endblock %}
+{% block body %}
+<div class="card" style="max-width: 380px; margin: 4rem auto;">
+  <h1>Sign in</h1>
+  <p class="muted">Find the low-competition towns and services worth building sites for.</p>
+  {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+  <form method="post" action="/login">
+    <input type="password" name="password" placeholder="Password" autofocus required style="width: 100%; margin-bottom: 0.75rem;">
+    <button type="submit" style="width: 100%;">Sign in</button>
+  </form>
+</div>
+{% endblock %}
